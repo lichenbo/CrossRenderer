@@ -3,6 +3,9 @@ class BaseApp
 {
 public:
 	BaseApp();
-	~BaseApp();
+	virtual ~BaseApp();
+	virtual void Update();
+	virtual void Init();
+	virtual void Cleanup();
 };
 

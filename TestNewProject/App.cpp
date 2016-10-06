@@ -2,13 +2,7 @@
 //
 #include "../Base/BaseApp.h"
 
-class App:BaseApp
+class App: public BaseApp
 {
 
 };
-
-int main()
-{
-    return 0;
-}
-
