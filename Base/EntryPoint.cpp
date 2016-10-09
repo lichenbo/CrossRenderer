@@ -1,5 +1,7 @@
-#include <iostream>
+#include "BaseApp.h"
+
+extern BaseApp* app;
 int main()
 {
-	std::cout << "Hello world" << std::endl;
+	app->Init();
 }

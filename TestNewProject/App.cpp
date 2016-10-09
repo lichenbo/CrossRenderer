@@ -2,7 +2,11 @@
 //
 #include "../Base/BaseApp.h"
 
+
+
 class App: public BaseApp
 {
 
 };
+
+BaseApp* app = new App();
