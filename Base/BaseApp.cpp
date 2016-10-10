@@ -1,9 +1,8 @@
 #include "BaseApp.h"
-
+#include "base.h"
 
 BaseApp::BaseApp()
 {
-
 	
 }
 
@@ -16,14 +15,13 @@ void BaseApp::Update()
 {
 }
 
-void BaseApp::Init()
+void BaseApp::Init(BaseRenderer* renderer)
 {
-	
+	Base::Init(renderer);
+	WindowManager::CreateWindow();
 }
 
 void BaseApp::Cleanup()
 {
 	
 }
-
-
