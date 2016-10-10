@@ -3,6 +3,7 @@
 #include "BaseRenderer.h"
 #include <iostream>
 
+SDL_Window* gWindow = NULL;
 char* WindowManager::windowTitle = "Default";
 int WindowManager::windowWidth = 800;
 int WindowManager::windowHeight = 600;
