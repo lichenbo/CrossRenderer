@@ -7,6 +7,8 @@ class Base
 public:
 	static void Init(BaseRenderer* renderer);
 	static void Quit();
+private:
+	static BaseRenderer* renderer;
 };
 class WindowManager
 {

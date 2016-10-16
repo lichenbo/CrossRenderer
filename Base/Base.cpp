@@ -3,15 +3,18 @@
 #include "BaseRenderer.h"
 #include <iostream>
 
-SDL_Window* gWindow = NULL;
+SDL_Window* WindowManager::gWindow = NULL;
 char* WindowManager::windowTitle = "Default";
 int WindowManager::windowWidth = 800;
 int WindowManager::windowHeight = 600;
 
+BaseRenderer* Base::renderer = NULL;
+
 void WindowManager::CreateWindow()
 {
 	std::cout << "Window size: " << windowWidth << " x " << windowHeight << std::endl;
-	gWindow = SDL_CreateWindow(windowTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth, windowHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+	gWindow = SDL_CreateWindow(windowTitle, 0, 0, windowWidth, windowHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+	std::cout << SDL_GetError() << std::endl;
 	if (gWindow == NULL)
 	{
 		std::cout << "Create window Error" << std::endl;
@@ -36,13 +39,13 @@ SDL_Window * WindowManager::Window()
 
 void Base::Init(BaseRenderer* renderer)
 {
-	if (SDL_Init(SDL_INIT_EVERYTHING) < 0)
+	if (SDL_Init(SDL_INIT_VIDEO) < 0)
 	{
 		std::cout << "SDL INIT ERROR" << std::endl;
+		return;
 	}
 
-	renderer->Init();
-
+	Base::renderer = renderer;
 }
 
 void Base::Quit()

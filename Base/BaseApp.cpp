@@ -19,9 +19,10 @@ void BaseApp::Init(BaseRenderer* renderer)
 {
 	Base::Init(renderer);
 	WindowManager::CreateWindow();
+	renderer->Init();
 }
 
 void BaseApp::Cleanup()
 {
-	
+	Base::Quit();
 }
