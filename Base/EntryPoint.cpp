@@ -6,6 +6,7 @@ extern BaseRenderer* renderer;
 int main()
 {
 	app->Init(renderer);
+	app->Setup();
 	app->Loop(renderer);
 	
 }

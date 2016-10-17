@@ -46,7 +46,6 @@ void Renderer::Render()
 			{
 				int x = 0, y = 0;
 				SDL_GetMouseState(&x, &y);
-				// Process keys handler
 			}
 		}
 
@@ -94,10 +93,13 @@ int Renderer::CreateProgram()
 
 int Renderer::CreateVertexShaderWithPath(char * path)
 {
-	GLCheckError();	GLuint shader = glCreateShader(GL_VERTEX_SHADER);	glShaderSource(shader, 1, (const GLchar* const*)path, NULL);	return shader;
+	GLCheckError();
+	GLuint shader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(shader, 1, (const GLchar* const*)path, NULL);
+	return shader;
 }
 
-int Renderer::CreateVertexShaderWithSource(char * source)
+int Renderer::CreateVertexShaderWithSource(char ** source)
 {
 	GLCheckError();
 	GLuint shader = glCreateShader(GL_VERTEX_SHADER);
@@ -107,12 +109,18 @@ int Renderer::CreateVertexShaderWithSource(char * source)
 
 int Renderer::CreatePixelShaderWithPath(char * path)
 {
-	GLCheckError();	GLuint shader = glCreateShader(GL_VERTEX_SHADER);	glShaderSource(shader, 1, (const GLchar* const*)path, NULL);	return shader;
+	GLCheckError();
+	GLuint shader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(shader, 1, (const GLchar* const*)path, NULL);
+	return shader;
 }
 
-int Renderer::CreatePixelShaderWithSource(char * source)
+int Renderer::CreatePixelShaderWithSource(char ** source)
 {
-	GLCheckError();	GLuint shader = glCreateShader(GL_FRAGMENT_SHADER);	glShaderSource(shader, 1, (const GLchar* const*)source, NULL);	return shader;
+	GLCheckError();
+	GLuint shader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(shader, 1, (const GLchar* const*)source, NULL);
+	return shader;
 }
 
 void Renderer::CompileShader(int shader)
@@ -123,25 +131,19 @@ void Renderer::CompileShader(int shader)
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &compileStatus);
 	if (compileStatus != GL_TRUE)
 	{
-		//Shader log length
 		int infoLogLength = 0;
 		int maxLength = infoLogLength;
 
-		//Get info string length
 		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
 
-		//Allocate string
 		char* infoLog = new char[maxLength];
 
-		//Get info log
 		glGetShaderInfoLog(shader, maxLength, &infoLogLength, infoLog);
 		if (infoLogLength > 0)
 		{
-			//Print Log
 			std::cout << infoLog << std::endl;
 		}
 
-		//Deallocate string
 		delete[] infoLog;
 	}
 }
@@ -154,30 +156,102 @@ void Renderer::AttachShaderToProgram(int shader, int program)
 void Renderer::LinkProgram(int program)
 {
 	glLinkProgram(program);
-	//Check for errors
 	GLint programSuccess = GL_TRUE;
 	glGetProgramiv(program, GL_LINK_STATUS, &programSuccess);
 	if (programSuccess != GL_TRUE)
 	{
-		//Program log length
 		int infoLogLength = 0;
 		int maxLength = infoLogLength;
 
-		//Get info string length
 		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
 
-		//Allocate string
 		char* infoLog = new char[maxLength];
 
-		//Get info log
 		glGetProgramInfoLog(program, maxLength, &infoLogLength, infoLog);
 		if (infoLogLength > 0)
 		{
-			//Print Log
 			std::cout << infoLog << std::endl;
 		}
 
-		//Deallocate string
 		delete[] infoLog;
 	}
+}
+
+int Renderer::CreateGenericBuffer()
+{
+	GLuint buffer = 0;
+	glGenBuffers(1, &buffer);
+	return buffer;
+}
+
+void Renderer::FillVBO(int vbo, float * source, int elementNumber)
+{
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, elementNumber*sizeof(GLfloat), source, GL_STATIC_DRAW);
+}
+
+int Renderer::CreateVBO(float * source, int elementNumber)
+{
+	int buffer = CreateGenericBuffer();
+	FillVBO(buffer, source, elementNumber);
+	return buffer;
+}
+
+void Renderer::FillIBO(int ibo, int * source, int elementNumber)
+{
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, elementNumber*sizeof(GLuint), source, GL_STATIC_DRAW);
+}
+
+int Renderer::CreateIBO(int * source, int elementNumber)
+{
+	int buffer = CreateGenericBuffer();
+	FillIBO(buffer, source, elementNumber);
+	return buffer;
+}
+
+void Renderer::UseShaderProgram(int program)
+{
+	glUseProgram(program);
+	currentShaderProgram = program;
+}
+
+void Renderer::BindVertexInput(char * variable, int vbo, int sizePerAttr)
+{
+	int attribLoc = glGetAttribLocation(currentShaderProgram, variable);
+	if (attribLoc < -1)
+	{
+		std::cout << "Cannot get " << variable << " in shader" << std::endl;
+	}
+	glEnableVertexAttribArray(attribLoc);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glVertexAttribPointer(attribLoc, sizePerAttr, GL_FLOAT, GL_FALSE, 0, NULL);
+}
+
+void Renderer::BindIBO(int ibo)
+{
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+}
+
+void Renderer::BindUniformMat4f(char * variable, float * value, bool transpose)
+{
+	int loc = glGetUniformLocation(currentShaderProgram, variable);
+	if (loc == -1)
+	{
+		std::cout << "Not find uniform " << variable << std::endl;
+	}
+	if (transpose)
+		glUniformMatrix4fv(loc, 1, GL_TRUE, value);
+	else
+		glUniformMatrix4fv(loc, 1, GL_FALSE, value);
+}
+
+void Renderer::DrawTriangleFan(int elementNumber)
+{
+	glDrawElements(GL_TRIANGLE_FAN, elementNumber, GL_UNSIGNED_INT, NULL);
+}
+
+void Renderer::DrawLine(int elementNumber)
+{
+	glDrawElements(GL_LINES, elementNumber, GL_UNSIGNED_INT, NULL);
 }
