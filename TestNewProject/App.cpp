@@ -2,8 +2,17 @@
 //
 #include "../Base/BaseApp.h"
 #include "../OpenGLRenderer/OpenGLRenderer.h"
+#include <assimp\Importer.hpp>
+#include <assimp\scene.h>
+#include <assimp\postprocess.h>
+#include <unordered_map>
+#include <iostream>
 BaseRenderer* renderer = new Renderer();
-
+struct SkeletonNode
+{
+	aiNode* node;
+	std::vector<SkeletonNode*> children;
+};
 class App: public BaseApp
 {
 private:
@@ -17,10 +26,56 @@ private:
 	int pixelShader = 0;
 	int shaderProgram = 0;
 	glm::mat4 MVP;
-	
+	SkeletonNode* skeleton;
+
+	SkeletonNode* importFBX()
+	{
+		Assimp::Importer importer;
+		const aiScene* scene = importer.ReadFile("Tad_2013.fbx", aiProcess_CalcTangentSpace);
+		if (!scene)
+		{
+			std::cout << importer.GetErrorString() << std::endl;
+		}
+		int NumBones = scene->mMeshes[0]->mNumBones;
+		
+		std::unordered_map<aiNode*, bool> nodeMap;
+		aiNode* rootNode = scene->mRootNode;
+		nodeMap[rootNode] = true;
+		for (int i = 0; i < NumBones; ++i)
+		{
+			aiBone* bone = scene->mMeshes[0]->mBones[i];
+			aiString name = bone->mName;
+			aiNode* node = rootNode->FindNode(name);
+			aiNode* currentNode = node;
+			while (node != rootNode)
+			{
+				nodeMap[node] = true;
+				node = node->mParent;
+			}
+		}
+		SkeletonNode* skeleton = new SkeletonNode;
+		BuildSkeleton(skeleton, rootNode, nodeMap);
+		return skeleton->children[0];
+	}
+
+	void BuildSkeleton(SkeletonNode* parent, aiNode* currentNode, std::unordered_map<aiNode*, bool> nodeMap)
+	{
+		for (int i = 0; i < currentNode->mNumChildren; ++i)
+		{
+			aiNode* child = currentNode->mChildren[i];
+			if (nodeMap[child] == true)
+			{
+				SkeletonNode* newNode = new SkeletonNode;
+				newNode->node = child;
+				parent->children.push_back(newNode);
+				BuildSkeleton(newNode, child, nodeMap);
+			}
+		}
+	}
 public:
 	void Setup()
 	{
+		skeleton = importFBX();
 		vbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
@@ -36,7 +91,7 @@ public:
 		renderer->AttachShaderToProgram(pixelShader, shaderProgram);
 		renderer->LinkProgram(shaderProgram);
 
-		
+		importFBX();
 		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, -1.0f) * glm::lookAt(glm::vec3(1.0), glm::vec3(0.0), glm::vec3(0.0, 1.0, 0.0));
 	}
 
