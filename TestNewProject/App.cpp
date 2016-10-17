@@ -75,7 +75,6 @@ private:
 public:
 	void Setup()
 	{
-		skeleton = importFBX();
 		vbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
@@ -91,7 +90,7 @@ public:
 		renderer->AttachShaderToProgram(pixelShader, shaderProgram);
 		renderer->LinkProgram(shaderProgram);
 
-		importFBX();
+		skeleton = importFBX();
 		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, -1.0f) * glm::lookAt(glm::vec3(1.0), glm::vec3(0.0), glm::vec3(0.0, 1.0, 0.0));
 	}
 
