@@ -29,6 +29,31 @@ void Renderer::Init()
 	}
 }
 
+void Renderer::Render()
+{
+	SDL_StartTextInput();
+	bool quit = false;
+	SDL_Event e;
+	while (!quit)
+	{
+		while (SDL_PollEvent(&e) != 0)
+		{
+			if (e.type == SDL_QUIT)
+			{
+				quit = true;
+			}
+			else if (e.type == SDL_TEXTINPUT)
+			{
+				int x = 0, y = 0;
+				SDL_GetMouseState(&x, &y);
+				// Process keys handler
+			}
+		}
+
+		SDL_GL_SwapWindow(WindowManager::Window());
+	}
+}
+
 void Renderer::SetRenderTarget()
 {
 
@@ -42,6 +67,11 @@ void Renderer::Draw()
 void Renderer::Cleanup()
 {
 	SDL_GL_DeleteContext(context);
+}
+
+void Renderer::SwapWindow()
+{
+	SDL_GL_SwapWindow(WindowManager::Window());
 }
 
 void Renderer::SetClearColor(float r, float g, float b, float a)

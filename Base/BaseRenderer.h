@@ -9,4 +9,6 @@ public:
 	virtual void Cleanup() = 0;
 	virtual void SetClearColor(float r, float g, float b, float a) = 0;
 	virtual void ClearScreen() = 0;
+	virtual void Render() = 0;
+	virtual void SwapWindow() = 0;
 };

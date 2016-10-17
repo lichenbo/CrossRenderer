@@ -13,7 +13,7 @@ BaseRenderer* Base::renderer = NULL;
 void WindowManager::CreateWindow()
 {
 	std::cout << "Window size: " << windowWidth << " x " << windowHeight << std::endl;
-	gWindow = SDL_CreateWindow(windowTitle, 0, 0, windowWidth, windowHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+	gWindow = SDL_CreateWindow(windowTitle, 100, 100, windowWidth, windowHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
 	std::cout << SDL_GetError() << std::endl;
 	if (gWindow == NULL)
 	{
