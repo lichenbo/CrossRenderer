@@ -46,6 +46,7 @@ void BaseApp::Loop(BaseRenderer * renderer)
 				
 			}
 		}
+		this->Update();
 		this->Render();
 		renderer->SwapWindow();
 	}

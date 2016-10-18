@@ -253,5 +253,7 @@ void Renderer::DrawTriangleFan(int elementNumber)
 
 void Renderer::DrawLine(int elementNumber)
 {
-	glDrawElements(GL_LINES, elementNumber, GL_UNSIGNED_INT, NULL);
+	//glDrawElements(GL_LINES, elementNumber, GL_UNSIGNED_INT, NULL);
+	glDrawArrays(GL_LINES, 0, elementNumber);
+	// elementNumber: How many vertex
 }

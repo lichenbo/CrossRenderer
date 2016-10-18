@@ -13,10 +13,16 @@ struct SkeletonNode
 	aiNode* node;
 	std::vector<SkeletonNode*> children;
 };
+
+class Quaternion
+{
+	
+};
 class App: public BaseApp
 {
 private:
 	float vertexData[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
+	std::vector<float> boneVertexData;
 	int indexData[4] = { 0,1,2,3 };
 	char* vertexShaderSource[1];
 	char* pixelShaderSource[1];
@@ -30,11 +36,11 @@ private:
 
 	SkeletonNode* importFBX()
 	{
-		Assimp::Importer importer;
-		const aiScene* scene = importer.ReadFile("Tad_2013.fbx", aiProcess_CalcTangentSpace);
+		Assimp::Importer* importer = new Assimp::Importer;
+		const aiScene* scene = importer->ReadFile("Tad_2013.fbx", aiProcess_CalcTangentSpace);
 		if (!scene)
 		{
-			std::cout << importer.GetErrorString() << std::endl;
+			std::cout << importer->GetErrorString() << std::endl;
 		}
 		int NumBones = scene->mMeshes[0]->mNumBones;
 		
@@ -78,7 +84,7 @@ public:
 		vbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
-			"#version 140 \n in vec2 pos2; uniform mat4 MVP; void main() {gl_Position = MVP*vec4(pos2.x, pos2.y, 0, 1);}";
+			"#version 140 \n in vec4 pos4; uniform mat4 MVP; void main() {gl_Position = MVP*pos4;}";
 		vertexShader = renderer->CreateVertexShaderWithSource(vertexShaderSource);
 		renderer->CompileShader(vertexShader);
 		pixelShaderSource[0] =
@@ -91,7 +97,25 @@ public:
 		renderer->LinkProgram(shaderProgram);
 
 		skeleton = importFBX();
-		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, -1.0f) * glm::lookAt(glm::vec3(1.0), glm::vec3(0.0), glm::vec3(0.0, 1.0, 0.0));
+		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 100.0f, -100.0f) * glm::lookAt(glm::vec3(0.0,0.0,50.0), glm::vec3(0.0), glm::vec3(0.0, 1.0, 0.0));
+	}
+
+	
+	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current)	{		glm::mat4 matrix = parent_matrix * matrixConverter(current->node->mTransformation);		glm::vec4 current_pos = matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);		if (parent != NULL)		{			for (int i = 0; i < 4; ++i)				boneVertexData.push_back(parent_pos[i]);			for (int i = 0; i < 4; ++i)				boneVertexData.push_back(current_pos[i]);		}		for (SkeletonNode* child : current->children)		{			readSkeletonHelper(current, current_pos,matrix, child);		}	}
+	glm::mat4 matrixConverter(const aiMatrix4x4& m)
+	{
+		glm::mat4 matrix;
+		for (int i = 0; i < 4; ++i)
+			for (int j = 0; j < 4; ++j)
+				matrix[i][j] = m[i][j];
+		return glm::transpose(matrix);
+	}
+
+	void Update()
+	{
+		boneVertexData.clear();
+		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), glm::mat4(1.0), skeleton);
+		renderer->FillVBO(vbo, &boneVertexData[0], boneVertexData.size());
 	}
 
 	void Render()
@@ -100,11 +124,11 @@ public:
 		renderer->ClearScreen();
 
 		renderer->UseShaderProgram(shaderProgram);
-		renderer->BindUniformMat4f("MVP",glm::value_ptr(MVP), true);
-		renderer->BindVertexInput("pos2", vbo, 2);
-		renderer->BindIBO(ibo);
-		//renderer->DrawLine(4);
-		renderer->DrawTriangleFan(4);
+		renderer->BindUniformMat4f("MVP",glm::value_ptr(MVP), false);
+		renderer->BindVertexInput("pos4", vbo, 4);
+		//renderer->BindIBO(ibo);
+		renderer->DrawLine(boneVertexData.size());
+		//renderer->DrawTriangleFan(4);
 	}
 };
 
