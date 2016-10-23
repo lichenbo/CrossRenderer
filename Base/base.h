@@ -1,5 +1,5 @@
 #pragma once
-#include "SDL.h"
+#include "include/sdl/SDL.h"
 class BaseRenderer;
 
 class Base
@@ -21,4 +21,9 @@ private:
 	static char* windowTitle;
 	static int windowWidth;
 	static int windowHeight;
+};
+class InputManager
+{
+public:
+	static bool KeyDown(SDL_Scancode code);
 };

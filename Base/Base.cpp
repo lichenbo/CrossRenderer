@@ -52,3 +52,12 @@ void Base::Quit()
 {
 	SDL_Quit();
 }
+
+bool InputManager::KeyDown(SDL_Scancode code)
+{
+	const Uint8 *state = SDL_GetKeyboardState(NULL);
+	if (state[code]) {
+		return true;
+	}
+	return false;
+}

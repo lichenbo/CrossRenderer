@@ -11,6 +11,7 @@ public:
 	virtual void Loop(BaseRenderer* renderer);
 	virtual void Render();
 	virtual void Cleanup();
+	
 private:
 	
 };

@@ -1,5 +1,6 @@
 // TestNewProject.cpp : Defines the entry point for the console application.
 //
+#include "../Base/base.h"
 #include "../Base/BaseApp.h"
 #include "../OpenGLRenderer/OpenGLRenderer.h"
 #include <assimp\Importer.hpp>
@@ -32,6 +33,10 @@ private:
 	int pixelShader = 0;
 	int shaderProgram = 0;
 	glm::mat4 MVP;
+	glm::vec3 lookAtDir;
+	glm::vec3 cameraPos;
+	glm::vec3 upVec;
+	glm::vec3 leftVec;
 	SkeletonNode* skeleton;
 
 	SkeletonNode* importFBX()
@@ -81,6 +86,7 @@ private:
 public:
 	void Setup()
 	{
+		BaseApp::Setup();
 		vbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
@@ -97,7 +103,12 @@ public:
 		renderer->LinkProgram(shaderProgram);
 
 		skeleton = importFBX();
-		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 100.0f, -100.0f) * glm::lookAt(glm::vec3(0.0,0.0,50.0), glm::vec3(0.0), glm::vec3(0.0, 1.0, 0.0));
+		cameraPos = glm::vec3(0.0, 0.0, 10.0);
+		lookAtDir = glm::vec3(0.0, 0.0, -1.0);
+		upVec = glm::vec3(0.0, 1.0, 0.0);
+		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
+		
+		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 100.0f, -100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 	}
 
 	
@@ -113,6 +124,37 @@ public:
 
 	void Update()
 	{
+		BaseApp::Update();
+		float cameraSpeed = 0.4;
+		if (InputManager::KeyDown(SDL_SCANCODE_W))
+		{
+			cameraPos += cameraSpeed*glm::normalize(lookAtDir);
+		}
+		if (InputManager::KeyDown(SDL_SCANCODE_S))
+		{
+			cameraPos -= cameraSpeed*glm::normalize(lookAtDir);
+		}
+		if (InputManager::KeyDown(SDL_SCANCODE_A))
+		{
+			cameraPos += cameraSpeed*glm::normalize(leftVec);
+		}
+		if (InputManager::KeyDown(SDL_SCANCODE_D))
+		{
+			cameraPos -= cameraSpeed*glm::normalize(leftVec);
+		}
+		if (InputManager::KeyDown(SDL_SCANCODE_LSHIFT))
+		{
+			cameraPos += cameraSpeed*glm::normalize(upVec);
+
+		}
+		if (InputManager::KeyDown(SDL_SCANCODE_LCTRL))
+		{
+			cameraPos -= cameraSpeed*glm::normalize(upVec);
+		}
+
+		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
+		MVP = glm::perspectiveFov((float)M_PI/2, 100.f,100.f, 0.1f, 100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
+
 		boneVertexData.clear();
 		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), glm::mat4(1.0), skeleton);
 		renderer->FillVBO(vbo, &boneVertexData[0], boneVertexData.size());
@@ -120,6 +162,7 @@ public:
 
 	void Render()
 	{
+		BaseApp::Render();
 		renderer->SetClearColor(1.0f, 0.0, 0.0, 1.0);
 		renderer->ClearScreen();
 
