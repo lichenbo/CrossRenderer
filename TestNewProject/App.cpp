@@ -17,7 +17,71 @@ struct SkeletonNode
 
 class Quaternion
 {
+public:
+	Quaternion(float s, float i, float j, float k): s(s), i(i), j(j), k(k) {}
+	Quaternion(const aiQuaternion& aiquat):s(aiquat.w), i(aiquat.x), j(aiquat.y), k(aiquat.z)	{}
+	Quaternion(const glm::vec4& v) : s(v.w), i(v.x), j(v.y), k(v.z) {}
+	Quaternion(float s, const glm::vec3& v) : s(s), i(v.x), j(v.y), k(v.z) {}
+	Quaternion(const glm::vec3& axis, float radius)
+	{
+		s = cos(radius / 2);
+		glm::vec3 v = sin(radius / 2) * axis;
+		i = v.x;
+		j = v.y;
+		k = v.z;
+	}
+	Quaternion(const glm::vec3& v) : Quaternion(0, v) {}
+	glm::mat4 matrix() {}
+	Quaternion conjugate()
+	{
+		return Quaternion(s, -i, -j, -k);
+	}
+	Quaternion operator/ (float f)
+	{
+		return Quaternion(s / f, i / f, j / f, k / f);
+	}
+	Quaternion operator* (Quaternion q)
+	{
+		glm::vec3 v1 = glm::vec3(i, j, k);
+		glm::vec3 v2 = glm::vec3(q.i, q.j, q.k);
+		return Quaternion(s*q.s - glm::dot(v1, v2), s*v2 + q.s*v1 + glm::cross(v1,v2));
+	}
+	float dot(Quaternion q)
+	{
+		glm::vec3 v1 = glm::vec3(i, j, k);
+		glm::vec3 v2 = glm::vec3(q.i, q.j, q.k);
+		return s*q.s + glm::dot(v1, v2);
+	}
+	float squareMagnitude()
+	{
+		return s*s + i*i + j*j + k*k;
+	}
+	float magnitude()
+	{
+		return sqrt(squareMagnitude());
+	}
+	Quaternion inverse()
+	{
+		return conjugate() / squareMagnitude();
+	}
+	glm::vec3 rotate(glm::vec3 point)
+	{
+		Quaternion result = *this * Quaternion(0, point) * inverse();
+		return glm::vec3(result.i, result.j, result.k);
+	}
+private:
+	float s, i, j, k;
 	
+};
+
+class VQS
+{
+public:
+
+private:
+	glm::vec3 v;
+	Quaternion q;
+	float s;
 };
 class App: public BaseApp
 {
@@ -112,7 +176,22 @@ public:
 	}
 
 	
-	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current)	{		glm::mat4 matrix = parent_matrix * matrixConverter(current->node->mTransformation);		glm::vec4 current_pos = matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);		if (parent != NULL)		{			for (int i = 0; i < 4; ++i)				boneVertexData.push_back(parent_pos[i]);			for (int i = 0; i < 4; ++i)				boneVertexData.push_back(current_pos[i]);		}		for (SkeletonNode* child : current->children)		{			readSkeletonHelper(current, current_pos,matrix, child);		}	}
+	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current)
+	{
+		glm::mat4 matrix = parent_matrix * matrixConverter(current->node->mTransformation);
+		glm::vec4 current_pos = matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+		if (parent != NULL)
+		{
+			for (int i = 0; i < 4; ++i)
+				boneVertexData.push_back(parent_pos[i]);
+			for (int i = 0; i < 4; ++i)
+				boneVertexData.push_back(current_pos[i]);
+		}
+		for (SkeletonNode* child : current->children)
+		{
+			readSkeletonHelper(current, current_pos,matrix, child);
+		}
+	}
 	glm::mat4 matrixConverter(const aiMatrix4x4& m)
 	{
 		glm::mat4 matrix;
