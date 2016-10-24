@@ -12,12 +12,14 @@ BaseRenderer* renderer = new Renderer();
 struct SkeletonNode
 {
 	aiNode* node;
+	aiNodeAnim* anim;
 	std::vector<SkeletonNode*> children;
 };
 
 class Quaternion
 {
 public:
+	Quaternion() {}
 	Quaternion(float s, float i, float j, float k): s(s), i(i), j(j), k(k) {}
 	Quaternion(const aiQuaternion& aiquat):s(aiquat.w), i(aiquat.x), j(aiquat.y), k(aiquat.z)	{}
 	Quaternion(const glm::vec4& v) : s(v.w), i(v.x), j(v.y), k(v.z) {}
@@ -31,14 +33,33 @@ public:
 		k = v.z;
 	}
 	Quaternion(const glm::vec3& v) : Quaternion(0, v) {}
-	glm::mat4 matrix() {}
+	glm::mat3 matrix() 
+	{
+		glm::vec3 v = glm::vec3(i, j, k);
+		glm::mat3 head = glm::mat3(i*i,i*j,i*k,i*j,j*j,j*k,i*k,j*k,k*k);
+		glm::mat3 tilda = glm::mat3(0.f, k, -j, -k, 0.f, i, j, -i, 0.f);
+	
+		return ((s*s - glm::dot(v, v)) * glm::mat3(1.0f) + 2.f * head + 2 * s*tilda);
+	}
 	Quaternion conjugate()
 	{
 		return Quaternion(s, -i, -j, -k);
 	}
+	Quaternion operator+ (const Quaternion& q)
+	{
+		return Quaternion(s + q.s, i + q.i, j + q.j, k + q.k);
+	}
+	Quaternion operator- (const Quaternion& q)
+	{
+		return Quaternion(s - q.s, i - q.i, j - q.j, k - q.k);
+	}
 	Quaternion operator/ (float f)
 	{
 		return Quaternion(s / f, i / f, j / f, k / f);
+	}
+	Quaternion operator* (float f)
+	{
+		return Quaternion(s*f, i*f, j*f, k*f);
 	}
 	Quaternion operator* (Quaternion q)
 	{
@@ -74,14 +95,18 @@ private:
 	
 };
 
-class VQS
+class VQM
 {
 public:
-
+	VQM(glm::vec3 v, const Quaternion& q, glm::vec3 m) : v(v), q(q), m(m) {}
+	glm::mat4 matrix()
+	{
+		return glm::translate(glm::mat4(1.0f), v) * glm::mat4(q.matrix()) * glm::scale(glm::mat4(1.0f), m);
+	}
 private:
 	glm::vec3 v;
 	Quaternion q;
-	float s;
+	glm::vec3 m;
 };
 class App: public BaseApp
 {
@@ -102,6 +127,8 @@ private:
 	glm::vec3 upVec;
 	glm::vec3 leftVec;
 	SkeletonNode* skeleton;
+	int current_tick = 0;
+	int max_tick = 0;
 
 	SkeletonNode* importFBX()
 	{
@@ -115,6 +142,8 @@ private:
 		
 		std::unordered_map<aiNode*, bool> nodeMap;
 		aiNode* rootNode = scene->mRootNode;
+		aiAnimation* animation = scene->mAnimations[0];
+		max_tick = animation->mDuration;
 		nodeMap[rootNode] = true;
 		for (int i = 0; i < NumBones; ++i)
 		{
@@ -129,12 +158,14 @@ private:
 			}
 		}
 		SkeletonNode* skeleton = new SkeletonNode;
-		BuildSkeleton(skeleton, rootNode, nodeMap);
+		BuildSkeleton(skeleton, rootNode, nodeMap, animation);
 		return skeleton->children[0];
 	}
 
-	void BuildSkeleton(SkeletonNode* parent, aiNode* currentNode, std::unordered_map<aiNode*, bool> nodeMap)
+	void BuildSkeleton(SkeletonNode* parent, aiNode* currentNode, std::unordered_map<aiNode*, bool> nodeMap, aiAnimation* animation)
 	{
+		
+
 		for (int i = 0; i < currentNode->mNumChildren; ++i)
 		{
 			aiNode* child = currentNode->mChildren[i];
@@ -142,8 +173,17 @@ private:
 			{
 				SkeletonNode* newNode = new SkeletonNode;
 				newNode->node = child;
+				newNode->anim = NULL;
+				for (int i = 0; i < animation->mNumChannels; ++i)
+				{
+					if (animation->mChannels[i]->mNodeName == child->mName)
+					{
+						newNode->anim = animation->mChannels[i];
+						break;
+					}
+				}
 				parent->children.push_back(newNode);
-				BuildSkeleton(newNode, child, nodeMap);
+				BuildSkeleton(newNode, child, nodeMap, animation);
 			}
 		}
 	}
@@ -176,9 +216,56 @@ public:
 	}
 
 	
-	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current)
-	{
-		glm::mat4 matrix = parent_matrix * matrixConverter(current->node->mTransformation);
+	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current, int current_tick)
+	{	
+
+		glm::mat4 matrix;
+		if (current->anim == NULL || current->anim->mNumPositionKeys == 0)
+		{
+			matrix = parent_matrix * matrixConverter(current->node->mTransformation);
+		}
+		else
+		{
+			glm::vec3 currentPosition;
+			if (current->anim->mNumPositionKeys == 1)
+			{
+				currentPosition = vectorConverter(current->anim->mPositionKeys[0].mValue);
+			}
+			for (int i = 0; i < current->anim->mNumPositionKeys - 1; ++i)
+			{
+				if (current_tick >= current->anim->mPositionKeys[i].mTime && current_tick <= current->anim->mPositionKeys[i + 1].mTime)
+				{
+					currentPosition = vectorConverter((current->anim->mPositionKeys[i + 1].mValue - current->anim->mPositionKeys[i].mValue) / (float)(current->anim->mPositionKeys[i + 1].mTime - current->anim->mPositionKeys[i].mTime) * (float)(current_tick - current->anim->mPositionKeys[i].mTime) + current->anim->mPositionKeys[i].mValue);
+				}
+
+			}
+			glm::vec3 currentScaling;
+			if (current->anim->mNumScalingKeys == 1)
+			{
+				currentScaling = vectorConverter(current->anim->mScalingKeys[0].mValue);
+			}
+			for (int i = 0; i < current->anim->mNumScalingKeys - 1; ++i)
+			{
+				if (current_tick >= current->anim->mScalingKeys[i].mTime && current_tick <= current->anim->mScalingKeys[i + 1].mTime)
+				{
+					currentScaling = vectorConverter((current->anim->mScalingKeys[i + 1].mValue - current->anim->mScalingKeys[i].mValue) / (float)(current->anim->mScalingKeys[i + 1].mTime - current->anim->mScalingKeys[i].mTime) * (float)(current_tick - current->anim->mScalingKeys[i].mTime) + current->anim->mScalingKeys[i].mValue);
+				}
+			}
+			Quaternion currentRotation;
+			if (current->anim->mNumRotationKeys == 1)
+			{
+				currentRotation = Quaternion(current->anim->mRotationKeys[0].mValue);
+			}
+			for (int i = 0; i < current->anim->mNumRotationKeys - 1; ++i)
+			{
+				if (current_tick >= current->anim->mRotationKeys[i].mTime && current_tick <= current->anim->mRotationKeys[i + 1].mTime)
+				{
+					currentRotation = (Quaternion(current->anim->mRotationKeys[i + 1].mValue) - Quaternion(current->anim->mRotationKeys[i].mValue)) / (float)(current->anim->mRotationKeys[i + 1].mTime - current->anim->mRotationKeys[i].mTime) * (float)(current_tick - current->anim->mRotationKeys[i].mTime) + Quaternion(current->anim->mRotationKeys[i].mValue);
+				}
+			}
+
+			matrix = parent_matrix * VQM(currentPosition, currentRotation, currentScaling).matrix();
+		}
 		glm::vec4 current_pos = matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
 		if (parent != NULL)
 		{
@@ -189,7 +276,7 @@ public:
 		}
 		for (SkeletonNode* child : current->children)
 		{
-			readSkeletonHelper(current, current_pos,matrix, child);
+			readSkeletonHelper(current, current_pos,matrix, child, current_tick);
 		}
 	}
 	glm::mat4 matrixConverter(const aiMatrix4x4& m)
@@ -199,6 +286,10 @@ public:
 			for (int j = 0; j < 4; ++j)
 				matrix[i][j] = m[i][j];
 		return glm::transpose(matrix);
+	}
+	glm::vec3 vectorConverter(const aiVector3t<float>& m)
+	{
+		return glm::vec3(m.x, m.y, m.z);
 	}
 
 	void Update()
@@ -231,11 +322,15 @@ public:
 			cameraPos -= cameraSpeed*glm::normalize(upVec);
 		}
 
+		current_tick++;
+		if (current_tick == max_tick)
+			current_tick = 0;
+
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
 		MVP = glm::perspectiveFov((float)M_PI/2, 100.f,100.f, 0.1f, 100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 
 		boneVertexData.clear();
-		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), glm::mat4(1.0), skeleton);
+		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), glm::mat4(1.0), skeleton, current_tick);
 		renderer->FillVBO(vbo, &boneVertexData[0], boneVertexData.size());
 	}
 
