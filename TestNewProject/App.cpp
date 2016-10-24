@@ -35,6 +35,7 @@ public:
 	Quaternion(const glm::vec3& v) : Quaternion(0, v) {}
 	glm::mat3 matrix() 
 	{
+		/* Column major matrix */
 		glm::vec3 v = glm::vec3(i, j, k);
 		glm::mat3 head = glm::mat3(i*i,i*j,i*k,i*j,j*j,j*k,i*k,j*k,k*k);
 		glm::mat3 tilda = glm::mat3(0.f, k, -j, -k, 0.f, i, j, -i, 0.f);
@@ -216,21 +217,26 @@ public:
 	}
 
 	
+	/* Read skeleton and interpolate the animation at runtime */
 	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current, int current_tick)
 	{	
 
 		glm::mat4 matrix;
+		/* if not animation provided, use the default transformation info */
 		if (current->anim == NULL || current->anim->mNumPositionKeys == 0)
 		{
 			matrix = parent_matrix * matrixConverter(current->node->mTransformation);
 		}
 		else
 		{
+			/* interpolation with translation */
 			glm::vec3 currentPosition;
+			/* if only one key frame provided, do not interpolate */
 			if (current->anim->mNumPositionKeys == 1)
 			{
 				currentPosition = vectorConverter(current->anim->mPositionKeys[0].mValue);
 			}
+			/* interpolate using LERP */
 			for (int i = 0; i < current->anim->mNumPositionKeys - 1; ++i)
 			{
 				if (current_tick >= current->anim->mPositionKeys[i].mTime && current_tick <= current->anim->mPositionKeys[i + 1].mTime)
@@ -239,6 +245,7 @@ public:
 				}
 
 			}
+			/* interpolation with scaling */
 			glm::vec3 currentScaling;
 			if (current->anim->mNumScalingKeys == 1)
 			{
@@ -251,6 +258,7 @@ public:
 					currentScaling = vectorConverter((current->anim->mScalingKeys[i + 1].mValue - current->anim->mScalingKeys[i].mValue) / (float)(current->anim->mScalingKeys[i + 1].mTime - current->anim->mScalingKeys[i].mTime) * (float)(current_tick - current->anim->mScalingKeys[i].mTime) + current->anim->mScalingKeys[i].mValue);
 				}
 			}
+			/* interpolation with rotation (Quaternion) */
 			Quaternion currentRotation;
 			if (current->anim->mNumRotationKeys == 1)
 			{
@@ -264,8 +272,11 @@ public:
 				}
 			}
 
+			/* convert Quaternion to matrix */
 			matrix = parent_matrix * VQM(currentPosition, currentRotation, currentScaling).matrix();
 		}
+
+		/* add the current transformation info to the rendering buffer */
 		glm::vec4 current_pos = matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
 		if (parent != NULL)
 		{
@@ -274,11 +285,14 @@ public:
 			for (int i = 0; i < 4; ++i)
 				boneVertexData.push_back(current_pos[i]);
 		}
+		/* recursively do the same thing for the children */
 		for (SkeletonNode* child : current->children)
 		{
 			readSkeletonHelper(current, current_pos,matrix, child, current_tick);
 		}
 	}
+
+	/* convert the assimp matrix to glm::mat4 (column major) */
 	glm::mat4 matrixConverter(const aiMatrix4x4& m)
 	{
 		glm::mat4 matrix;
@@ -292,6 +306,7 @@ public:
 		return glm::vec3(m.x, m.y, m.z);
 	}
 
+	/* Update animation per frame */
 	void Update()
 	{
 		BaseApp::Update();
@@ -321,6 +336,7 @@ public:
 		{
 			cameraPos -= cameraSpeed*glm::normalize(upVec);
 		}
+		
 
 		current_tick++;
 		if (current_tick == max_tick)
@@ -334,6 +350,7 @@ public:
 		renderer->FillVBO(vbo, &boneVertexData[0], boneVertexData.size());
 	}
 
+	/* Render content per frame */
 	void Render()
 	{
 		BaseApp::Render();
