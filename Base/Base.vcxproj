@@ -137,11 +137,15 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\imgui\imgui.h" />
+    <ClInclude Include="..\imgui\imgui_impl_sdl_gl3.h" />
     <ClInclude Include="base.h" />
     <ClInclude Include="BaseApp.h" />
     <ClInclude Include="BaseRenderer.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\imgui\imgui.cpp" />
+    <ClCompile Include="..\imgui\imgui_impl_sdl_gl3.cpp" />
     <ClCompile Include="Base.cpp" />
     <ClCompile Include="BaseApp.cpp" />
   </ItemGroup>
