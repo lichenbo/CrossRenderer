@@ -114,10 +114,13 @@ class App: public BaseApp
 private:
 	float vertexData[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
 	std::vector<float> boneVertexData;
+	std::vector<float> pathVertexData;
+	std::vector<glm::vec3> pathKnots;
 	int indexData[4] = { 0,1,2,3 };
 	char* vertexShaderSource[1];
 	char* pixelShaderSource[1];
-	int vbo = 0;
+	int bonevbo = 0;
+	int pathvbo = 0;
 	int ibo = 0;
 	int vertexShader = 0;
 	int pixelShader = 0;
@@ -192,7 +195,8 @@ public:
 	void Setup()
 	{
 		BaseApp::Setup();
-		vbo = renderer->CreateVBO(vertexData, 8);
+		bonevbo = renderer->CreateVBO(vertexData, 8);
+		pathvbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
 			"#version 140 \n in vec4 pos4; uniform mat4 MVP; void main() {gl_Position = MVP*pos4;}";
@@ -208,12 +212,18 @@ public:
 		renderer->LinkProgram(shaderProgram);
 
 		skeleton = importFBX();
-		cameraPos = glm::vec3(0.0, 0.0, 10.0);
+		cameraPos = glm::vec3(0.0, 5.0, 10.0);
 		lookAtDir = glm::vec3(0.0, 0.0, -1.0);
 		upVec = glm::vec3(0.0, 1.0, 0.0);
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
 		
 		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 100.0f, -100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
+
+		// Path predefined
+		pathKnots.push_back(glm::vec3(0.0, 0.0, 0.0));
+		pathKnots.push_back(glm::vec3(1.0, 0.0, 1.0));
+		pathKnots.push_back(glm::vec3(2.0, 0.0, -1.0));
+		pathKnots.push_back(glm::vec3(3.0, 0.0, 0.0));
 	}
 
 	
@@ -306,6 +316,82 @@ public:
 		return glm::vec3(m.x, m.y, m.z);
 	}
 
+
+	glm::vec3 bezierInterpolation(const std::vector<glm::vec3>& v, float t)
+	{
+		assert(v.size() > 2);
+		std::vector<glm::vec3> controlPoints;
+		float scale = 0.1;
+		for (int i = 0; i < v.size(); ++i)
+		{
+			if (i == 0)
+			{
+				glm::vec3 p1 = v[i];
+				glm::vec3 p2 = v[i + 1];
+				glm::vec3 tangent = v[i + 1] - v[i];
+				glm::vec3 q1 = p1 + scale*tangent;
+
+				controlPoints.push_back(p1);
+				controlPoints.push_back(q1);
+			}
+			else if (i == v.size() - 1)
+			{
+				glm::vec3 p0 = v[i - 1];
+				glm::vec3 p1 = v[i];
+				glm::vec3 tangent = p1 - p0;
+				glm::vec3 q0 = p1 - scale*tangent;
+				
+				controlPoints.push_back(q0);
+				controlPoints.push_back(p1);
+			}
+			else
+			{
+				glm::vec3 p0 = v[i - 1];
+				glm::vec3 p1 = v[i];
+				glm::vec3 p2 = v[i + 1];
+				glm::vec3 tangent = glm::normalize(p2 - p0);
+				glm::vec3 q0 = p1 - scale*tangent*glm::length(p1 - p0);
+				glm::vec3 q1 = p1 + scale*tangent*glm::length(p2 - p1);
+
+				controlPoints.push_back(q0);
+				controlPoints.push_back(p1);
+				controlPoints.push_back(q1);
+
+			}
+		}
+
+		// fill path curve data
+		for (int cur_tick = 0; cur_tick < max_tick; ++cur_tick)
+		{
+			glm::vec3 cur_point = deCasteljau(controlPoints, cur_tick / (float)max_tick);
+			if (cur_tick > 0 && cur_tick < max_tick - 1)
+			{
+				pathVertexData.push_back(cur_point[0]);
+				pathVertexData.push_back(cur_point[1]);
+				pathVertexData.push_back(cur_point[2]);
+				pathVertexData.push_back(1.0f);
+			}
+				pathVertexData.push_back(cur_point[0]);
+				pathVertexData.push_back(cur_point[1]);
+				pathVertexData.push_back(cur_point[2]);
+				pathVertexData.push_back(1.0f);
+		}
+
+		return deCasteljau(controlPoints, t);
+	}
+
+	glm::vec3 deCasteljau(std::vector<glm::vec3> controlPoints, float t)
+	{
+		for (int i = 0; i < controlPoints.size()-1; ++i)
+		{
+			for (int j = 0; j < controlPoints.size()-i-1; ++j)
+			{
+				controlPoints[j] = controlPoints[j] * (1 - t) + controlPoints[j + 1] * t;
+			}
+		}
+		return controlPoints[0];
+	}
+
 	/* Update animation per frame */
 	void Update()
 	{
@@ -345,9 +431,18 @@ public:
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
 		MVP = glm::perspectiveFov((float)M_PI/2, 100.f,100.f, 0.1f, 100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 
+		// Update bones
 		boneVertexData.clear();
 		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), glm::mat4(1.0), skeleton, current_tick);
-		renderer->FillVBO(vbo, &boneVertexData[0], boneVertexData.size());
+		renderer->FillVBO(bonevbo, &boneVertexData[0], boneVertexData.size());
+
+		// Update paths
+
+		pathVertexData.clear();
+		bezierInterpolation(pathKnots, current_tick/(float)max_tick);
+		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+		
+		 
 	}
 
 	/* Render content per frame */
@@ -359,10 +454,14 @@ public:
 
 		renderer->UseShaderProgram(shaderProgram);
 		renderer->BindUniformMat4f("MVP",glm::value_ptr(MVP), false);
-		renderer->BindVertexInput("pos4", vbo, 4);
-		//renderer->BindIBO(ibo);
+
+		// Draw Bones
+		renderer->BindVertexInput("pos4", bonevbo, 4);
 		renderer->DrawLine(boneVertexData.size());
-		//renderer->DrawTriangleFan(4);
+
+		// Draw Path
+		renderer->BindVertexInput("pos4", pathvbo, 4);
+		renderer->DrawLine(pathVertexData.size());
 	}
 };
 
