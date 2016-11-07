@@ -6,6 +6,8 @@
 #include <assimp\Importer.hpp>
 #include <assimp\scene.h>
 #include <assimp\postprocess.h>
+#include <vector>
+#include <map>
 #include <unordered_map>
 #include <iostream>
 BaseRenderer* renderer = new Renderer();
@@ -116,6 +118,8 @@ private:
 	std::vector<float> boneVertexData;
 	std::vector<float> pathVertexData;
 	std::vector<glm::vec3> pathKnots;
+	std::vector<glm::vec3> intermediatePathKnots;
+	std::map<float, float> arcLengthMap;
 	int indexData[4] = { 0,1,2,3 };
 	char* vertexShaderSource[1];
 	char* pixelShaderSource[1];
@@ -131,8 +135,10 @@ private:
 	glm::vec3 upVec;
 	glm::vec3 leftVec;
 	SkeletonNode* skeleton;
-	int current_tick = 0;
+	float current_tick = 0.0f;
 	int max_tick = 0;
+	float current_dist = 0.0f;
+	float max_dist = 0.0f;
 
 	SkeletonNode* importFBX()
 	{
@@ -191,6 +197,9 @@ private:
 			}
 		}
 	}
+
+
+
 public:
 	void Setup()
 	{
@@ -212,18 +221,28 @@ public:
 		renderer->LinkProgram(shaderProgram);
 
 		skeleton = importFBX();
-		cameraPos = glm::vec3(0.0, 5.0, 10.0);
-		lookAtDir = glm::vec3(0.0, 0.0, -1.0);
+		cameraPos = glm::vec3(0.0, 5.0, 12.0);
+		lookAtDir = glm::vec3(0.0, -0.4, -1.0);
 		upVec = glm::vec3(0.0, 1.0, 0.0);
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
 		
 		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 100.0f, -100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 
 		// Path predefined
-		pathKnots.push_back(glm::vec3(0.0, 0.0, 0.0));
-		pathKnots.push_back(glm::vec3(1.0, 0.0, 1.0));
-		pathKnots.push_back(glm::vec3(2.0, 0.0, -1.0));
-		pathKnots.push_back(glm::vec3(3.0, 0.0, 0.0));
+		pathKnots.push_back(glm::vec3(-5.0, 0.0, 5.0));
+		pathKnots.push_back(glm::vec3(2.0, 0.0, 5.0));
+		pathKnots.push_back(glm::vec3(1.0, 0.0, -1.0));
+		pathKnots.push_back(glm::vec3(-2.0, 0.0, -2.0));
+		pathKnots.push_back(glm::vec3(-5.0, 0.0, -1.0));
+		pathKnots.push_back(glm::vec3(0.0, 0.0, 1.0));
+		pathKnots.push_back(glm::vec3(4.0, 0.0, -1.0));
+		pathKnots.push_back(glm::vec3(5.0, 0.0, -5.0));
+
+
+		// generate path data
+		pathVertexData.clear();
+		bezierInterpolation(pathKnots);
+		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
 	}
 
 	
@@ -316,11 +335,9 @@ public:
 		return glm::vec3(m.x, m.y, m.z);
 	}
 
-
-	glm::vec3 bezierInterpolation(const std::vector<glm::vec3>& v, float t)
+	void bezierInterpolation(const std::vector<glm::vec3>& v)
 	{
 		assert(v.size() > 2);
-		std::vector<glm::vec3> controlPoints;
 		float scale = 0.1;
 		for (int i = 0; i < v.size(); ++i)
 		{
@@ -331,8 +348,8 @@ public:
 				glm::vec3 tangent = v[i + 1] - v[i];
 				glm::vec3 q1 = p1 + scale*tangent;
 
-				controlPoints.push_back(p1);
-				controlPoints.push_back(q1);
+				intermediatePathKnots.push_back(p1);
+				intermediatePathKnots.push_back(q1);
 			}
 			else if (i == v.size() - 1)
 			{
@@ -341,8 +358,8 @@ public:
 				glm::vec3 tangent = p1 - p0;
 				glm::vec3 q0 = p1 - scale*tangent;
 				
-				controlPoints.push_back(q0);
-				controlPoints.push_back(p1);
+				intermediatePathKnots.push_back(q0);
+				intermediatePathKnots.push_back(p1);
 			}
 			else
 			{
@@ -353,9 +370,9 @@ public:
 				glm::vec3 q0 = p1 - scale*tangent*glm::length(p1 - p0);
 				glm::vec3 q1 = p1 + scale*tangent*glm::length(p2 - p1);
 
-				controlPoints.push_back(q0);
-				controlPoints.push_back(p1);
-				controlPoints.push_back(q1);
+				intermediatePathKnots.push_back(q0);
+				intermediatePathKnots.push_back(p1);
+				intermediatePathKnots.push_back(q1);
 
 			}
 		}
@@ -363,7 +380,7 @@ public:
 		// fill path curve data
 		for (int cur_tick = 0; cur_tick < max_tick; ++cur_tick)
 		{
-			glm::vec3 cur_point = deCasteljau(controlPoints, cur_tick / (float)max_tick);
+			glm::vec3 cur_point = deCasteljau(intermediatePathKnots, cur_tick / (float)max_tick);
 			if (cur_tick > 0 && cur_tick < max_tick - 1)
 			{
 				pathVertexData.push_back(cur_point[0]);
@@ -377,7 +394,48 @@ public:
 				pathVertexData.push_back(1.0f);
 		}
 
-		return deCasteljau(controlPoints, t);
+
+		// generate arc length table
+		arcLengthMap.clear();
+		arcLengthMap[0.0f] = 0.0f;
+		std::vector<float> segment_list;
+		float threshold = 0.0001f;
+		float max_interval = 0.001f;
+		segment_list.push_back(0.0f);
+		segment_list.push_back(1.0f);
+		std::unordered_map<float, float> invArcLengthMap;
+		while (segment_list.size() > 0)
+		{
+				float ua = segment_list[0];
+				float ub = segment_list[1];
+				float um = 0.5*(ua + ub);
+				float A = glm::length(deCasteljau(intermediatePathKnots, ua) - deCasteljau(intermediatePathKnots, um));
+				float B = glm::length(deCasteljau(intermediatePathKnots, ub) - deCasteljau(intermediatePathKnots, um));
+				float C = glm::length(deCasteljau(intermediatePathKnots, ub) - deCasteljau(intermediatePathKnots, ua));
+				float d = A + B - C;
+
+				if (d > threshold && abs(ua - ub) > max_interval)
+				{
+					segment_list.insert(segment_list.begin() + 1, um);
+					segment_list.insert(segment_list.begin() + 1, um);
+				}
+				else
+				{
+					invArcLengthMap[um] = invArcLengthMap[ua] + A;
+					invArcLengthMap[ub] = invArcLengthMap[um] + B;
+					segment_list.erase(segment_list.begin());
+					segment_list.erase(segment_list.begin());
+				}
+		}
+		auto end_iter = invArcLengthMap.end();
+		end_iter--;
+		max_dist = end_iter->second;
+
+		for (auto item : invArcLengthMap)
+		{
+			arcLengthMap[item.second] = item.first;
+		}
+		
 	}
 
 	glm::vec3 deCasteljau(std::vector<glm::vec3> controlPoints, float t)
@@ -392,54 +450,73 @@ public:
 		return controlPoints[0];
 	}
 
+	glm::vec3 pathFindByLength(float length)
+	{
+		auto it = arcLengthMap.lower_bound(length);
+		if (it == arcLengthMap.end())
+			it--;
+		return deCasteljau(intermediatePathKnots, it->second);
+	}
+
 	/* Update animation per frame */
 	void Update()
 	{
 		BaseApp::Update();
-		float cameraSpeed = 0.4;
-		if (InputManager::KeyDown(SDL_SCANCODE_W))
 		{
-			cameraPos += cameraSpeed*glm::normalize(lookAtDir);
-		}
-		if (InputManager::KeyDown(SDL_SCANCODE_S))
-		{
-			cameraPos -= cameraSpeed*glm::normalize(lookAtDir);
-		}
-		if (InputManager::KeyDown(SDL_SCANCODE_A))
-		{
-			cameraPos += cameraSpeed*glm::normalize(leftVec);
-		}
-		if (InputManager::KeyDown(SDL_SCANCODE_D))
-		{
-			cameraPos -= cameraSpeed*glm::normalize(leftVec);
-		}
-		if (InputManager::KeyDown(SDL_SCANCODE_LSHIFT))
-		{
-			cameraPos += cameraSpeed*glm::normalize(upVec);
+			float cameraSpeed = 0.4;
+			if (InputManager::KeyDown(SDL_SCANCODE_W))
+			{
+				cameraPos += cameraSpeed*glm::normalize(lookAtDir);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_S))
+			{
+				cameraPos -= cameraSpeed*glm::normalize(lookAtDir);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_A))
+			{
+				cameraPos += cameraSpeed*glm::normalize(leftVec);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_D))
+			{
+				cameraPos -= cameraSpeed*glm::normalize(leftVec);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_LSHIFT))
+			{
+				cameraPos += cameraSpeed*glm::normalize(upVec);
 
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_LCTRL))
+			{
+				cameraPos -= cameraSpeed*glm::normalize(upVec);
+			}
 		}
-		if (InputManager::KeyDown(SDL_SCANCODE_LCTRL))
-		{
-			cameraPos -= cameraSpeed*glm::normalize(upVec);
-		}
-		
-
-		current_tick++;
-		if (current_tick == max_tick)
+		float animationSpeed = 0.5f;	// cycle per second
+		current_tick += max_tick * animationSpeed / 60;
+		if (current_tick >= max_tick)
 			current_tick = 0;
+
+		float walkingSpeed = 1.0f;	// unit per second
+		current_dist += walkingSpeed / 60.0f;
+		if (current_dist >= max_dist)
+			current_dist = 0;
+		glm::vec3 current_pos = pathFindByLength(current_dist);
+		glm::mat4 pos_matrix(1.0);
+		pos_matrix[3][0] = current_pos[0];
+		pos_matrix[3][1] = current_pos[1];
+		pos_matrix[3][2] = current_pos[2];
+
+
+
 
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
 		MVP = glm::perspectiveFov((float)M_PI/2, 100.f,100.f, 0.1f, 100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 
 		// Update bones
 		boneVertexData.clear();
-		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), glm::mat4(1.0), skeleton, current_tick);
+		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), pos_matrix, skeleton, current_tick);
 		renderer->FillVBO(bonevbo, &boneVertexData[0], boneVertexData.size());
 
-		// Update paths
-
-		pathVertexData.clear();
-		bezierInterpolation(pathKnots, current_tick/(float)max_tick);
+		// Fill path data
 		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
 		
 		 
