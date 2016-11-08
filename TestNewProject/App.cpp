@@ -458,6 +458,26 @@ public:
 		return deCasteljau(intermediatePathKnots, it->second);
 	}
 
+	float walkingSpeedFunc(float maxWalkingSpeed)
+	{
+		float accel_dist = 0.33*max_dist;
+		float min_value_fix = 0.05;
+		if (current_dist < accel_dist)
+		{
+			float speed = maxWalkingSpeed * sinf(current_dist / accel_dist * M_PI*0.5);
+			if (speed < min_value_fix)
+				speed = min_value_fix;
+			return speed;
+		}
+		if (current_dist > max_dist - accel_dist)
+		{
+			float speed = maxWalkingSpeed * cosf((current_dist - max_dist + accel_dist) / accel_dist * M_PI*0.5);
+			if (speed < min_value_fix)
+				speed = min_value_fix;
+			return speed;
+		}
+		return maxWalkingSpeed;
+	}
 	/* Update animation per frame */
 	void Update()
 	{
@@ -490,22 +510,27 @@ public:
 				cameraPos -= cameraSpeed*glm::normalize(upVec);
 			}
 		}
-		float animationSpeed = 0.5f;	// cycle per second
+		
+
+		float maxWalkingSpeed = 1.0f;	// unit per second
+		float walkingSpeed = walkingSpeedFunc(maxWalkingSpeed);
+		current_dist += walkingSpeed / 60.0f;
+		if (current_dist >= max_dist)
+			current_dist = 0;
+
+		float cycle_per_unit = 0.3f;
+		float animationSpeed = cycle_per_unit * walkingSpeed;	// cycle per second
 		current_tick += max_tick * animationSpeed / 60;
 		if (current_tick >= max_tick)
 			current_tick = 0;
 
-		float walkingSpeed = 1.0f;	// unit per second
-		current_dist += walkingSpeed / 60.0f;
-		if (current_dist >= max_dist)
-			current_dist = 0;
 		glm::vec3 current_pos = pathFindByLength(current_dist);
+		glm::vec3 looking_pos = pathFindByLength(current_dist + 0.5f);
 		glm::mat4 pos_matrix(1.0);
+		pos_matrix = glm::rotate(pos_matrix, glm::acos(glm::dot(glm::normalize(looking_pos - current_pos), glm::vec3(1., 0., 0.))) + (float)M_PI, glm::vec3(0.f, 1.f, 0.f));
 		pos_matrix[3][0] = current_pos[0];
 		pos_matrix[3][1] = current_pos[1];
 		pos_matrix[3][2] = current_pos[2];
-
-
 
 
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
