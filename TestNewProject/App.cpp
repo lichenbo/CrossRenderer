@@ -117,6 +117,7 @@ private:
 	float vertexData[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
 	std::vector<float> boneVertexData;
 	std::vector<float> pathVertexData;
+	std::vector<float> floatData;
 	std::vector<glm::vec3> pathKnots;
 	std::vector<glm::vec3> intermediatePathKnots;
 	std::map<float, float> arcLengthMap;
@@ -125,6 +126,7 @@ private:
 	char* pixelShaderSource[1];
 	int bonevbo = 0;
 	int pathvbo = 0;
+	int floorvbo = 0;
 	int ibo = 0;
 	int vertexShader = 0;
 	int pixelShader = 0;
@@ -206,6 +208,7 @@ public:
 		BaseApp::Setup();
 		bonevbo = renderer->CreateVBO(vertexData, 8);
 		pathvbo = renderer->CreateVBO(vertexData, 8);
+		floorvbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
 			"#version 140 \n in vec4 pos4; uniform mat4 MVP; void main() {gl_Position = MVP*pos4;}";
@@ -243,11 +246,31 @@ public:
 		pathVertexData.clear();
 		bezierInterpolation(pathKnots);
 		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+
+		// floor data
+		std::vector<glm::vec3> floorVertexData;
+		floorVertexData.push_back(glm::vec3(-5.f, 0.f, 5.f));
+		floorVertexData.push_back(glm::vec3(-5.f, 0.f, -5.f));
+		floorVertexData.push_back(glm::vec3(-5.f, 0.f, -5.f));
+		floorVertexData.push_back(glm::vec3(5.f, 0.f, -5.f));
+		floorVertexData.push_back(glm::vec3(5.f, 0.f, -5.f));
+		floorVertexData.push_back(glm::vec3(5.f, 0.f, 5.f));
+		floorVertexData.push_back(glm::vec3(5.f, 0.f, 5.f));
+		floorVertexData.push_back(glm::vec3(-5.f, 0.f, 5.f));
+
+		for (int i = 0; i < floorVertexData.size(); ++i)
+		{
+			floatData.push_back(floorVertexData[i].x);
+			floatData.push_back(floorVertexData[i].y);
+			floatData.push_back(floorVertexData[i].z);
+			floatData.push_back(1.f);
+		}
+		renderer->FillVBO(floorvbo, &floatData[0], floatData.size());
 	}
 
 	
 	/* Read skeleton and interpolate the animation at runtime */
-	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current, int current_tick)
+	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current, float current_tick)
 	{	
 
 		glm::mat4 matrix;
@@ -378,10 +401,10 @@ public:
 		}
 
 		// fill path curve data
-		for (int cur_tick = 0; cur_tick < max_tick; ++cur_tick)
+		for (int cur_tick = 0; cur_tick < 5000; ++cur_tick)
 		{
-			glm::vec3 cur_point = deCasteljau(intermediatePathKnots, cur_tick / (float)max_tick);
-			if (cur_tick > 0 && cur_tick < max_tick - 1)
+			glm::vec3 cur_point = deCasteljau(intermediatePathKnots, cur_tick / 5000.f);
+			if (cur_tick > 0 && cur_tick < 5000 - 1)
 			{
 				pathVertexData.push_back(cur_point[0]);
 				pathVertexData.push_back(cur_point[1]);
@@ -399,7 +422,7 @@ public:
 		arcLengthMap.clear();
 		arcLengthMap[0.0f] = 0.0f;
 		std::vector<float> segment_list;
-		float threshold = 0.0001f;
+		float threshold = 0.00001f;
 		float max_interval = 0.001f;
 		segment_list.push_back(0.0f);
 		segment_list.push_back(1.0f);
@@ -460,7 +483,7 @@ public:
 
 	float walkingSpeedFunc(float maxWalkingSpeed)
 	{
-		float accel_dist = 0.33*max_dist;
+		float accel_dist = 0.1*max_dist;
 		float min_value_fix = 0.05;
 		if (current_dist < accel_dist)
 		{
@@ -525,7 +548,7 @@ public:
 			current_tick = 0;
 
 		glm::vec3 current_pos = pathFindByLength(current_dist);
-		glm::vec3 looking_pos = pathFindByLength(current_dist + 0.5f);
+		glm::vec3 looking_pos = pathFindByLength(current_dist + 0.8f);
 		glm::mat4 pos_matrix(1.0);
 		pos_matrix = glm::rotate(pos_matrix, glm::acos(glm::dot(glm::normalize(looking_pos - current_pos), glm::vec3(1., 0., 0.))) + (float)M_PI, glm::vec3(0.f, 1.f, 0.f));
 		pos_matrix[3][0] = current_pos[0];
@@ -543,7 +566,8 @@ public:
 
 		// Fill path data
 		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
-		
+
+		renderer->FillVBO(floorvbo, &floatData[0], floatData.size());
 		 
 	}
 
@@ -564,6 +588,9 @@ public:
 		// Draw Path
 		renderer->BindVertexInput("pos4", pathvbo, 4);
 		renderer->DrawLine(pathVertexData.size());
+
+		renderer->BindVertexInput("pos4", floorvbo, 4);
+		renderer->DrawLine(floatData.size());
 	}
 };
 

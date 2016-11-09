@@ -1,6 +1,7 @@
 #include "BaseApp.h"
 #include "base.h"
-
+#include <chrono>
+#include <iostream>
 BaseApp::BaseApp()
 {
 	
@@ -46,9 +47,20 @@ void BaseApp::Loop(BaseRenderer * renderer)
 				
 			}
 		}
+		typedef std::chrono::high_resolution_clock Time;
+		typedef std::chrono::milliseconds ms;
+		typedef std::chrono::duration<float> fsec;
+		auto t0 = Time::now();
+
 		this->Update();
 		this->Render();
+
+		auto t1 = Time::now();
 		renderer->SwapWindow();
+
+		fsec fs = t1 - t0;
+		ms d = std::chrono::duration_cast<ms>(fs);
+		std::cout << 1000 / d.count() << "fps\n";
 	}
 
 	SDL_StopTextInput();
