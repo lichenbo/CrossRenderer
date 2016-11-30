@@ -383,6 +383,15 @@ public:
 				matrix[i][j] = m[i][j];
 		return glm::transpose(matrix);
 	}
+	aiMatrix4x4 matrixConverter(const glm::mat4& m)
+	{
+		glm::mat4 matrix = glm::transpose(m);
+		aiMatrix4x4 aiMatrix;
+		for (int i = 0; i < 4; ++i)
+			for (int j = 0; j < 4; ++j)
+				aiMatrix[i][j] = matrix[i][j];
+		return aiMatrix;
+	}
 	glm::vec3 vectorConverter(const aiVector3t<float>& m)
 	{
 		return glm::vec3(m.x, m.y, m.z);
@@ -534,14 +543,42 @@ public:
 
 	glm::vec3 getGlobalPos(SkeletonNode* node)
 	{
-		glm::vec4 e_pos(0.f, 0.f, 0.f, 1.f);		for (SkeletonNode* e = node; e != NULL; e = e->parent)		{			e_pos = matrixConverter(e->node->mTransformation) * e_pos;		}
+		glm::vec4 e_pos(0.f, 0.f, 0.f, 1.f);
+		for (SkeletonNode* e = node; e != NULL; e = e->parent)
+		{
+			e_pos = matrixConverter(e->node->mTransformation) * e_pos;
+		}
 		e_pos = pos_matrix * e_pos;
 		return glm::vec3(e_pos);
 	}
 
 	void CCD()
 	{
-		std::vector<SkeletonNode*> joints;		std::vector<glm::vec3> jointsPos;		for (SkeletonNode* e = end_effector; e != NULL; e = e->parent)		{			joints.push_back(e);			jointsPos.push_back(getGlobalPos(e));		}		float epsilon = 0.01f;		if (glm::distance(jointsPos[0], targetPos) < epsilon)		{			return;		}		glm::vec3 last_pos0 = jointsPos[0];		for (int i = 1; i < jointsPos.size(); ++i)		{			last_pos0 = jointsPos[0];			glm::vec3 jk = jointsPos[i];			glm::vec3 vck = jointsPos[0] - jk;			glm::vec3 vdk = targetPos - jk;			float angle = acosf(glm::dot(vck, vdk) / (vck.length*vdk.length));			glm::vec3 vk = glm::cross(vck, vdk);			jointsPos[i - 1] = glm::rotate(glm::mat4(1.0f), angle, vk) * glm::vec4(jointsPos[i - 1], 1.0f);			for (int j = i - 2; j >= 0; --j)			{				jointsPos[j] = matrixConverter(joints[j]->node->mTransformation) * glm::vec4(jointsPos[j + 1], 1.f);			}			if (glm::distance(jointsPos[0], targetPos) < epsilon)			{				return;			}		}	}
+		float epsilon = 0.01f;
+		if (glm::distance(getGlobalPos(end_effector), targetPos) < epsilon)
+		{
+			return;
+		}
+		glm::vec3 initPos = getGlobalPos(end_effector);
+		glm::vec3 nextPos = initPos;
+		do {
+			for (SkeletonNode* current_node = end_effector; current_node != NULL; current_node = current_node->parent)
+			{
+				glm::vec3 jk = getGlobalPos(current_node->parent);
+				glm::vec3 vck = getGlobalPos(end_effector) - jk;
+				glm::vec3 vdk = targetPos - jk;
+				float angel = acosf(glm::dot(vck, vdk) / (vck.length()*vdk.length()));
+				glm::vec3 vk = glm::cross(vck, vdk);
+				current_node->node->mTransformation = matrixConverter(glm::rotate(glm::mat4(1.0f), angel, vk) * matrixConverter(current_node->node->mTransformation));
+				nextPos = getGlobalPos(end_effector);
+				if (glm::distance(getGlobalPos(end_effector), targetPos) < epsilon)
+				{
+					return;
+				}
+			}
+		} while (glm::distance(initPos, nextPos) > epsilon);
+		 
+	}
 	/* Update animation per frame */
 	void Update()
 	{
