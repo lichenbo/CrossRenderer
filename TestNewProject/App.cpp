@@ -16,6 +16,7 @@ struct SkeletonNode
 	aiNode* node;
 	aiNodeAnim* anim;
 	std::vector<SkeletonNode*> children;
+	SkeletonNode* parent;
 };
 
 class Quaternion
@@ -117,9 +118,11 @@ private:
 	float vertexData[8] = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
 	std::vector<float> boneVertexData;
 	std::vector<float> pathVertexData;
-	std::vector<float> floatData;
+	std::vector<float> floorVertexData;
+	std::vector<float> targetVertexData;
 	std::vector<glm::vec3> pathKnots;
 	std::vector<glm::vec3> intermediatePathKnots;
+	std::vector<glm::vec3> targetVertex;
 	std::map<float, float> arcLengthMap;
 	int indexData[4] = { 0,1,2,3 };
 	char* vertexShaderSource[1];
@@ -127,6 +130,7 @@ private:
 	int bonevbo = 0;
 	int pathvbo = 0;
 	int floorvbo = 0;
+	int targetvbo = 0;
 	int ibo = 0;
 	int vertexShader = 0;
 	int pixelShader = 0;
@@ -136,11 +140,16 @@ private:
 	glm::vec3 cameraPos;
 	glm::vec3 upVec;
 	glm::vec3 leftVec;
+	glm::vec3 targetPos;
 	SkeletonNode* skeleton;
 	float current_tick = 0.0f;
 	int max_tick = 0;
 	float current_dist = 0.0f;
 	float max_dist = 0.0f;
+	glm::mat4 pos_matrix = glm::mat4(1.0f);
+	SkeletonNode* end_effector = 0;
+
+	int projectIndex = 3;
 
 	SkeletonNode* importFBX()
 	{
@@ -171,13 +180,12 @@ private:
 		}
 		SkeletonNode* skeleton = new SkeletonNode;
 		BuildSkeleton(skeleton, rootNode, nodeMap, animation);
+		skeleton->children[0]->parent = NULL;
 		return skeleton->children[0];
 	}
 
 	void BuildSkeleton(SkeletonNode* parent, aiNode* currentNode, std::unordered_map<aiNode*, bool> nodeMap, aiAnimation* animation)
 	{
-		
-
 		for (int i = 0; i < currentNode->mNumChildren; ++i)
 		{
 			aiNode* child = currentNode->mChildren[i];
@@ -186,6 +194,7 @@ private:
 				SkeletonNode* newNode = new SkeletonNode;
 				newNode->node = child;
 				newNode->anim = NULL;
+				newNode->parent = parent;
 				for (int i = 0; i < animation->mNumChannels; ++i)
 				{
 					if (animation->mChannels[i]->mNodeName == child->mName)
@@ -194,12 +203,15 @@ private:
 						break;
 					}
 				}
+				if (strcmp(newNode->node->mName.C_Str() ,"Bip01 L Finger1") == 0)
+				{
+					end_effector = newNode;
+				}
 				parent->children.push_back(newNode);
 				BuildSkeleton(newNode, child, nodeMap, animation);
 			}
 		}
 	}
-
 
 
 public:
@@ -209,6 +221,7 @@ public:
 		bonevbo = renderer->CreateVBO(vertexData, 8);
 		pathvbo = renderer->CreateVBO(vertexData, 8);
 		floorvbo = renderer->CreateVBO(vertexData, 8);
+		targetvbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
 			"#version 140 \n in vec4 pos4; uniform mat4 MVP; void main() {gl_Position = MVP*pos4;}";
@@ -231,41 +244,56 @@ public:
 		
 		MVP = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 100.0f, -100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 
-		// Path predefined
-		pathKnots.push_back(glm::vec3(-5.0, 0.0, 5.0));
-		pathKnots.push_back(glm::vec3(2.0, 0.0, 5.0));
-		pathKnots.push_back(glm::vec3(1.0, 0.0, -1.0));
-		pathKnots.push_back(glm::vec3(-2.0, 0.0, -2.0));
-		pathKnots.push_back(glm::vec3(-5.0, 0.0, -1.0));
-		pathKnots.push_back(glm::vec3(0.0, 0.0, 1.0));
-		pathKnots.push_back(glm::vec3(4.0, 0.0, -1.0));
-		pathKnots.push_back(glm::vec3(5.0, 0.0, -5.0));
+		if (projectIndex == 2)
+		{
+			// Path predefined
+			pathKnots.push_back(glm::vec3(-5.0, 0.0, 5.0));
+			pathKnots.push_back(glm::vec3(2.0, 0.0, 5.0));
+			pathKnots.push_back(glm::vec3(1.0, 0.0, -1.0));
+			pathKnots.push_back(glm::vec3(-2.0, 0.0, -2.0));
+			pathKnots.push_back(glm::vec3(-5.0, 0.0, -1.0));
+			pathKnots.push_back(glm::vec3(0.0, 0.0, 1.0));
+			pathKnots.push_back(glm::vec3(4.0, 0.0, -1.0));
+			pathKnots.push_back(glm::vec3(5.0, 0.0, -5.0));
 
 
-		// generate path data
-		pathVertexData.clear();
-		bezierInterpolation(pathKnots);
-		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+			// generate path data
+			pathVertexData.clear();
+			bezierInterpolation(pathKnots);
+			renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+		}
 
 		// floor data
-		std::vector<glm::vec3> floorVertexData;
-		floorVertexData.push_back(glm::vec3(-5.f, 0.f, 5.f));
-		floorVertexData.push_back(glm::vec3(-5.f, 0.f, -5.f));
-		floorVertexData.push_back(glm::vec3(-5.f, 0.f, -5.f));
-		floorVertexData.push_back(glm::vec3(5.f, 0.f, -5.f));
-		floorVertexData.push_back(glm::vec3(5.f, 0.f, -5.f));
-		floorVertexData.push_back(glm::vec3(5.f, 0.f, 5.f));
-		floorVertexData.push_back(glm::vec3(5.f, 0.f, 5.f));
-		floorVertexData.push_back(glm::vec3(-5.f, 0.f, 5.f));
+		std::vector<glm::vec3> floorVertex;
+		floorVertex.push_back(glm::vec3(-5.f, 0.f, 5.f));
+		floorVertex.push_back(glm::vec3(-5.f, 0.f, -5.f));
+		floorVertex.push_back(glm::vec3(-5.f, 0.f, -5.f));
+		floorVertex.push_back(glm::vec3(5.f, 0.f, -5.f));
+		floorVertex.push_back(glm::vec3(5.f, 0.f, -5.f));
+		floorVertex.push_back(glm::vec3(5.f, 0.f, 5.f));
+		floorVertex.push_back(glm::vec3(5.f, 0.f, 5.f));
+		floorVertex.push_back(glm::vec3(-5.f, 0.f, 5.f));
 
-		for (int i = 0; i < floorVertexData.size(); ++i)
+		for (int i = 0; i < floorVertex.size(); ++i)
 		{
-			floatData.push_back(floorVertexData[i].x);
-			floatData.push_back(floorVertexData[i].y);
-			floatData.push_back(floorVertexData[i].z);
-			floatData.push_back(1.f);
+			floorVertexData.push_back(floorVertex[i].x);
+			floorVertexData.push_back(floorVertex[i].y);
+			floorVertexData.push_back(floorVertex[i].z);
+			floorVertexData.push_back(1.f);
 		}
-		renderer->FillVBO(floorvbo, &floatData[0], floatData.size());
+		renderer->FillVBO(floorvbo, &floorVertexData[0], floorVertexData.size());
+
+		// target cube data for proj 3
+		targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
+		targetVertex.push_back(glm::vec3(-0.25, -0.25, 0));
+		targetVertex.push_back(glm::vec3(-0.25, -0.25, 0));
+		targetVertex.push_back(glm::vec3(0.25, -0.25, 0));
+		targetVertex.push_back(glm::vec3(0.25, -0.25, 0));
+		targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
+		targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
+		targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
+
+		targetPos = glm::vec3(0.0f, 3.0f, 0.0f);
 	}
 
 	
@@ -275,6 +303,8 @@ public:
 
 		glm::mat4 matrix;
 		/* if not animation provided, use the default transformation info */
+		if (projectIndex == 3)
+			current->anim = NULL;
 		if (current->anim == NULL || current->anim->mNumPositionKeys == 0)
 		{
 			matrix = parent_matrix * matrixConverter(current->node->mTransformation);
@@ -360,7 +390,7 @@ public:
 
 	void bezierInterpolation(const std::vector<glm::vec3>& v)
 	{
-		assert(v.size() > 2);
+		assert(v.size() > 1);
 		float scale = 0.1;
 		for (int i = 0; i < v.size(); ++i)
 		{
@@ -501,12 +531,24 @@ public:
 		}
 		return maxWalkingSpeed;
 	}
+
+	glm::vec3 getGlobalPos(SkeletonNode* node)
+	{
+		glm::vec4 e_pos(0.f, 0.f, 0.f, 1.f);		for (SkeletonNode* e = node; e != NULL; e = e->parent)		{			e_pos = matrixConverter(e->node->mTransformation) * e_pos;		}
+		e_pos = pos_matrix * e_pos;
+		return glm::vec3(e_pos);
+	}
+
+	void CCD()
+	{
+		std::vector<SkeletonNode*> joints;		std::vector<glm::vec3> jointsPos;		for (SkeletonNode* e = end_effector; e != NULL; e = e->parent)		{			joints.push_back(e);			jointsPos.push_back(getGlobalPos(e));		}		float epsilon = 0.01f;		if (glm::distance(jointsPos[0], targetPos) < epsilon)		{			return;		}		glm::vec3 last_pos0 = jointsPos[0];		for (int i = 1; i < jointsPos.size(); ++i)		{			last_pos0 = jointsPos[0];			glm::vec3 jk = jointsPos[i];			glm::vec3 vck = jointsPos[0] - jk;			glm::vec3 vdk = targetPos - jk;			float angle = acosf(glm::dot(vck, vdk) / (vck.length*vdk.length));			glm::vec3 vk = glm::cross(vck, vdk);			jointsPos[i - 1] = glm::rotate(glm::mat4(1.0f), angle, vk) * glm::vec4(jointsPos[i - 1], 1.0f);			for (int j = i - 2; j >= 0; --j)			{				jointsPos[j] = matrixConverter(joints[j]->node->mTransformation) * glm::vec4(jointsPos[j + 1], 1.f);			}			if (glm::distance(jointsPos[0], targetPos) < epsilon)			{				return;			}		}	}
 	/* Update animation per frame */
 	void Update()
 	{
 		BaseApp::Update();
 		{
 			float cameraSpeed = 0.4;
+			float targetSpeed = 0.4;
 			if (InputManager::KeyDown(SDL_SCANCODE_W))
 			{
 				cameraPos += cameraSpeed*glm::normalize(lookAtDir);
@@ -532,28 +574,60 @@ public:
 			{
 				cameraPos -= cameraSpeed*glm::normalize(upVec);
 			}
+			if (InputManager::KeyDown(SDL_SCANCODE_UP))
+			{
+				targetPos += targetSpeed * glm::vec3(0, 0, -1);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_DOWN))
+			{
+				targetPos += targetSpeed * glm::vec3(0, 0, 1);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_LEFT))
+			{
+				targetPos += targetSpeed * glm::vec3(-1, 0, 0);
+			}
+			if (InputManager::KeyDown(SDL_SCANCODE_RIGHT))
+			{
+				targetPos += targetSpeed * glm::vec3(1, 0, 0);
+			}
+		}
+
+
+		if (projectIndex == 3)
+		{
+			if (pathKnots.size() > 0)
+			{
+				pathVertexData.clear();
+				bezierInterpolation(pathKnots);
+				renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+			}
+			
+			CCD();
 		}
 		
+		
+		if (pathKnots.size() > 0)
+		{
+			float maxWalkingSpeed = 1.0f;	// unit per second
+			float walkingSpeed = walkingSpeedFunc(maxWalkingSpeed);
+			current_dist += walkingSpeed / 60.0f;
+			if (current_dist >= max_dist)
+				current_dist = 0;
 
-		float maxWalkingSpeed = 1.0f;	// unit per second
-		float walkingSpeed = walkingSpeedFunc(maxWalkingSpeed);
-		current_dist += walkingSpeed / 60.0f;
-		if (current_dist >= max_dist)
-			current_dist = 0;
+			float cycle_per_unit = 0.3f;
+			float animationSpeed = cycle_per_unit * walkingSpeed;	// cycle per second
+			current_tick += max_tick * animationSpeed / 60;
+			if (current_tick >= max_tick)
+				current_tick = 0;
 
-		float cycle_per_unit = 0.3f;
-		float animationSpeed = cycle_per_unit * walkingSpeed;	// cycle per second
-		current_tick += max_tick * animationSpeed / 60;
-		if (current_tick >= max_tick)
-			current_tick = 0;
+			glm::vec3 current_pos = pathFindByLength(current_dist);
+			glm::vec3 looking_pos = pathFindByLength(current_dist + 0.8f);
+			pos_matrix = glm::rotate(pos_matrix, glm::acos(glm::dot(glm::normalize(looking_pos - current_pos), glm::vec3(1., 0., 0.))) + (float)M_PI, glm::vec3(0.f, 1.f, 0.f));
+			pos_matrix[3][0] = current_pos[0];
+			pos_matrix[3][1] = current_pos[1];
+			pos_matrix[3][2] = current_pos[2];
+		}		
 
-		glm::vec3 current_pos = pathFindByLength(current_dist);
-		glm::vec3 looking_pos = pathFindByLength(current_dist + 0.8f);
-		glm::mat4 pos_matrix(1.0);
-		pos_matrix = glm::rotate(pos_matrix, glm::acos(glm::dot(glm::normalize(looking_pos - current_pos), glm::vec3(1., 0., 0.))) + (float)M_PI, glm::vec3(0.f, 1.f, 0.f));
-		pos_matrix[3][0] = current_pos[0];
-		pos_matrix[3][1] = current_pos[1];
-		pos_matrix[3][2] = current_pos[2];
 
 
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
@@ -565,10 +639,22 @@ public:
 		renderer->FillVBO(bonevbo, &boneVertexData[0], boneVertexData.size());
 
 		// Fill path data
-		renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+		if (pathVertexData.size() > 0)
+			renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
 
-		renderer->FillVBO(floorvbo, &floatData[0], floatData.size());
+		renderer->FillVBO(floorvbo, &floorVertexData[0], floorVertexData.size());
 		 
+		// Fill target data
+		targetVertexData.clear();
+		for (int i = 0; i < targetVertex.size(); ++i)
+		{
+			glm::vec3 dest = targetPos + targetVertex[i];
+			targetVertexData.push_back(dest.x);
+			targetVertexData.push_back(dest.y);
+			targetVertexData.push_back(dest.z);
+			targetVertexData.push_back(1.0f);
+		}
+		renderer->FillVBO(targetvbo, &targetVertexData[0], targetVertexData.size());
 	}
 
 	/* Render content per frame */
@@ -586,11 +672,17 @@ public:
 		renderer->DrawLine(boneVertexData.size());
 
 		// Draw Path
-		renderer->BindVertexInput("pos4", pathvbo, 4);
-		renderer->DrawLine(pathVertexData.size());
+		if (pathVertexData.size() > 0)
+		{
+			renderer->BindVertexInput("pos4", pathvbo, 4);
+			renderer->DrawLine(pathVertexData.size());
+		}
 
 		renderer->BindVertexInput("pos4", floorvbo, 4);
-		renderer->DrawLine(floatData.size());
+		renderer->DrawLine(floorVertexData.size());
+
+		renderer->BindVertexInput("pos4", targetvbo, 4);
+		renderer->DrawLine(targetVertexData.size());
 	}
 };
 
