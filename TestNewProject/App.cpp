@@ -13,18 +13,12 @@
 #include "..\OpenGLRenderer/include/glm/gtx/vector_angle.hpp"
 
 BaseRenderer* renderer = new Renderer();
-struct SkeletonNode
-{
-	aiNode* node;
-	aiNodeAnim* anim;
-	std::vector<SkeletonNode*> children;
-	SkeletonNode* parent;
-};
+
 
 class Quaternion
 {
 public:
-	Quaternion() {}
+	Quaternion(): s(1.f), i(0), j(0), k(0) {}
 	Quaternion(float s, float i, float j, float k): s(s), i(i), j(j), k(k) {}
 	Quaternion(const aiQuaternion& aiquat):s(aiquat.w), i(aiquat.x), j(aiquat.y), k(aiquat.z)	{}
 	Quaternion(const glm::vec4& v) : s(v.w), i(v.x), j(v.y), k(v.z) {}
@@ -99,6 +93,15 @@ public:
 		Quaternion result = *this * Quaternion(0, point) * inverse();
 		return glm::vec3(result.i, result.j, result.k);
 	}
+	float angle()
+	{
+		return 2 * acos(s);
+	}
+	glm::vec3 axis()
+	{
+		float invsqrt = 1 / sqrt(1 - s*s);
+		return glm::vec3(i,j,k) * invsqrt;
+	}
 private:
 	float s, i, j, k;
 	
@@ -116,6 +119,18 @@ private:
 	glm::vec3 v;
 	Quaternion q;
 	glm::vec3 m;
+};
+
+
+struct SkeletonNode
+{
+	aiNode* node;
+	aiNodeAnim* anim;
+	std::vector<SkeletonNode*> children;
+	SkeletonNode* parent;
+	aiMatrix4x4 initTransformation;
+	Quaternion initQuaternion;
+	Quaternion deltaQuaternion;
 };
 class App: public BaseApp
 {
@@ -154,6 +169,7 @@ private:
 	glm::mat4 pos_matrix = glm::mat4(1.0f);
 	SkeletonNode* end_effector = 0;
 	SkeletonNode* skeleton_local_root = 0;
+	std::unordered_map<SkeletonNode*, float> constraint;
 
 	int projectIndex = 3;
 
@@ -201,6 +217,8 @@ private:
 				newNode->node = child;
 				newNode->anim = NULL;
 				newNode->parent = parent;
+				newNode->initQuaternion = aiQuaternion(aiMatrix3x3(child->mTransformation));
+				newNode->initTransformation = child->mTransformation;
 				for (int i = 0; i < animation->mNumChannels; ++i)
 				{
 					if (animation->mChannels[i]->mNodeName == child->mName)
@@ -572,22 +590,18 @@ public:
 				glm::vec3 vck = glm::normalize(nextPos - jk);
 				glm::vec3 vdk = glm::normalize(targetPos - jk);
 				float angle = glm::acos(glm::clamp(-1.0f,1.0f, glm::dot(vck, vdk)));
-				if (angle < 0.15 || angle > M_PI-0.15)
-				{
-					continue;
-				}
+				
 				glm::vec3 vk = glm::normalize(glm::cross(vck, vdk));
-				//aiQuaternion out(aiVector3t<float>(vk.x, vk.y, vk.z), angle);
 				Quaternion out(vk, angle);
 
-				/*aiVector3t<float> initTrans;
-				aiVector3t<float> initScale;
-				aiQuaternion initRot;
-				current_node->parent->node->mTransformation.Decompose(initScale, initRot, initTrans);
-				initRot = out * initRot;
-				current_node->parent->node->mTransformation = aiMatrix4x4(initScale, initRot, initTrans);*/
+				Quaternion temp = out * current_node->deltaQuaternion;
 
-				current_node->node->mTransformation = matrixConverter(out.matrix()) * current_node->node->mTransformation;
+				// Constraint
+				/*if (temp.angle() > M_PI / 3)
+					temp = Quaternion(cos(M_PI / 6), temp.axis() * sinf(M_PI/6));*/
+				current_node->deltaQuaternion = temp;
+
+				current_node->node->mTransformation = matrixConverter(current_node->deltaQuaternion.matrix()) * current_node->initTransformation;
 
 				nextPos = getGlobalPos(end_effector);
 				if (glm::distance(nextPos, targetPos) < 0.01)
@@ -595,7 +609,7 @@ public:
 					return true;
 				}
 			}
-		} while (glm::distance(initPos, nextPos) > 0.05);
+		} while (glm::distance(initPos, nextPos) > 0.1);
 		 
 		return false;
 	}

@@ -1,13 +1,23 @@
 Model: Tad.fbx is used
 
-Implemented algorithm:
+Manipulator depth (7-8)
+Target Object drawn
+Move along a path
 
-Path Interpolation : Using Bezier curve
-Arc Length Calc: multi-segment table
-Speed and Orientation: sin/cos as ease-in/out, Look at ahead of 1 unit for orientation control.
+IK algorithm : CCD
+Smooth motion
+constraints (line 600 - 601 of App.cpp in AnimationDemo project, commented out)
+
+Memo:
+I've faced the constraints problem days ago. 
+I've implemented the constrains, but that results in the framerates under 60fps and take a lot of time when the target is far away.
+So I just commented the lines out.
+Since this is the last day of the second week Åi0.9 penalty), I decide to give it up, already spent several days on it.
 
 Instructions: 
-	FPS-like control:
+	target control:
+		arrow keys to move
+	camera control:
 		move forward : w
 		move backward: s
 		move leftward: a
