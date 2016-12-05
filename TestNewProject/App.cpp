@@ -10,6 +10,8 @@
 #include <map>
 #include <unordered_map>
 #include <iostream>
+#include "..\OpenGLRenderer/include/glm/gtx/vector_angle.hpp"
+
 BaseRenderer* renderer = new Renderer();
 struct SkeletonNode
 {
@@ -27,13 +29,16 @@ public:
 	Quaternion(const aiQuaternion& aiquat):s(aiquat.w), i(aiquat.x), j(aiquat.y), k(aiquat.z)	{}
 	Quaternion(const glm::vec4& v) : s(v.w), i(v.x), j(v.y), k(v.z) {}
 	Quaternion(float s, const glm::vec3& v) : s(s), i(v.x), j(v.y), k(v.z) {}
-	Quaternion(const glm::vec3& axis, float radius)
+	Quaternion(const glm::vec3& axis, float angle)
 	{
-		s = cos(radius / 2);
-		glm::vec3 v = sin(radius / 2) * axis;
+		s = cos(angle / 2);
+		glm::vec3 v = sin(angle / 2) * axis;
 		i = v.x;
 		j = v.y;
 		k = v.z;
+
+		float invmag = 1.f/magnitude();
+		*this = *this * invmag;
 	}
 	Quaternion(const glm::vec3& v) : Quaternion(0, v) {}
 	glm::mat3 matrix() 
@@ -148,6 +153,7 @@ private:
 	float max_dist = 0.0f;
 	glm::mat4 pos_matrix = glm::mat4(1.0f);
 	SkeletonNode* end_effector = 0;
+	SkeletonNode* skeleton_local_root = 0;
 
 	int projectIndex = 3;
 
@@ -203,9 +209,13 @@ private:
 						break;
 					}
 				}
-				if (strcmp(newNode->node->mName.C_Str() ,"Bip01 L Finger1") == 0)
+				if (strcmp(newNode->node->mName.C_Str() ,"Bip01 L Finger12") == 0)
 				{
 					end_effector = newNode;
+				}
+				else if (strcmp(newNode->node->mName.C_Str(), "Bip01 Spine1") == 0)
+				{
+					skeleton_local_root = newNode;
 				}
 				parent->children.push_back(newNode);
 				BuildSkeleton(newNode, child, nodeMap, animation);
@@ -293,14 +303,13 @@ public:
 		targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
 		targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
 
-		targetPos = glm::vec3(0.0f, 3.0f, 0.0f);
+		targetPos = glm::vec3(0.0f, 5.0f, 0.0f);
 	}
 
 	
 	/* Read skeleton and interpolate the animation at runtime */
 	void readSkeletonHelper(SkeletonNode* parent, glm::vec4 parent_pos, glm::mat4 parent_matrix, SkeletonNode* current, float current_tick)
 	{	
-
 		glm::mat4 matrix;
 		/* if not animation provided, use the default transformation info */
 		if (projectIndex == 3)
@@ -377,19 +386,12 @@ public:
 	/* convert the assimp matrix to glm::mat4 (column major) */
 	glm::mat4 matrixConverter(const aiMatrix4x4& m)
 	{
-		glm::mat4 matrix;
-		for (int i = 0; i < 4; ++i)
-			for (int j = 0; j < 4; ++j)
-				matrix[i][j] = m[i][j];
-		return glm::transpose(matrix);
+		glm::mat4 matrix(m[0][0], m[1][0], m[2][0], m[3][0], m[0][1], m[1][1], m[2][1], m[3][1], m[0][2], m[1][2], m[2][2], m[3][2], m[0][3], m[1][3], m[2][3], m[3][3]);
+		return (matrix);
 	}
 	aiMatrix4x4 matrixConverter(const glm::mat4& m)
 	{
-		glm::mat4 matrix = glm::transpose(m);
-		aiMatrix4x4 aiMatrix;
-		for (int i = 0; i < 4; ++i)
-			for (int j = 0; j < 4; ++j)
-				aiMatrix[i][j] = matrix[i][j];
+		aiMatrix4x4 aiMatrix(m[0][0], m[1][0], m[2][0], m[3][0], m[0][1], m[1][1], m[2][1], m[3][1], m[0][2], m[1][2], m[2][2], m[3][2], m[0][3], m[1][3], m[2][3], m[3][3]);
 		return aiMatrix;
 	}
 	glm::vec3 vectorConverter(const aiVector3t<float>& m)
@@ -552,32 +554,50 @@ public:
 		return glm::vec3(e_pos);
 	}
 
-	void CCD()
+	bool CCD()
 	{
-		float epsilon = 0.01f;
-		if (glm::distance(getGlobalPos(end_effector), targetPos) < epsilon)
-		{
-			return;
-		}
+		float epsilon = 0.2f;
 		glm::vec3 initPos = getGlobalPos(end_effector);
 		glm::vec3 nextPos = initPos;
+		if (glm::distance(initPos, targetPos) < 0.01)
+		{
+			return true;
+		}
 		do {
-			for (SkeletonNode* current_node = end_effector; current_node != NULL; current_node = current_node->parent)
+			initPos = nextPos;
+			for (SkeletonNode* current_node = end_effector; current_node->parent != skeleton_local_root; current_node = current_node->parent)
 			{
 				glm::vec3 jk = getGlobalPos(current_node->parent);
-				glm::vec3 vck = getGlobalPos(end_effector) - jk;
-				glm::vec3 vdk = targetPos - jk;
-				float angel = acosf(glm::dot(vck, vdk) / (vck.length()*vdk.length()));
-				glm::vec3 vk = glm::cross(vck, vdk);
-				current_node->node->mTransformation = matrixConverter(glm::rotate(glm::mat4(1.0f), angel, vk) * matrixConverter(current_node->node->mTransformation));
-				nextPos = getGlobalPos(end_effector);
-				if (glm::distance(getGlobalPos(end_effector), targetPos) < epsilon)
+				assert(jk == jk);
+				glm::vec3 vck = glm::normalize(nextPos - jk);
+				glm::vec3 vdk = glm::normalize(targetPos - jk);
+				float angle = glm::acos(glm::clamp(-1.0f,1.0f, glm::dot(vck, vdk)));
+				if (angle < 0.15 || angle > M_PI-0.15)
 				{
-					return;
+					continue;
+				}
+				glm::vec3 vk = glm::normalize(glm::cross(vck, vdk));
+				//aiQuaternion out(aiVector3t<float>(vk.x, vk.y, vk.z), angle);
+				Quaternion out(vk, angle);
+
+				/*aiVector3t<float> initTrans;
+				aiVector3t<float> initScale;
+				aiQuaternion initRot;
+				current_node->parent->node->mTransformation.Decompose(initScale, initRot, initTrans);
+				initRot = out * initRot;
+				current_node->parent->node->mTransformation = aiMatrix4x4(initScale, initRot, initTrans);*/
+
+				current_node->node->mTransformation = matrixConverter(out.matrix()) * current_node->node->mTransformation;
+
+				nextPos = getGlobalPos(end_effector);
+				if (glm::distance(nextPos, targetPos) < 0.01)
+				{
+					return true;
 				}
 			}
-		} while (glm::distance(initPos, nextPos) > epsilon);
+		} while (glm::distance(initPos, nextPos) > 0.05);
 		 
+		return false;
 	}
 	/* Update animation per frame */
 	void Update()
@@ -632,14 +652,26 @@ public:
 
 		if (projectIndex == 3)
 		{
-			if (pathKnots.size() > 0)
+			if (!CCD())
 			{
+
+				// Draw path
+
+				glm::vec3 direction = targetPos - glm::vec3(pos_matrix[3][0], 0.0f, pos_matrix[3][2]);
+				direction = glm::normalize(direction);
 				pathVertexData.clear();
-				bezierInterpolation(pathKnots);
-				renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+				pathVertexData.push_back(targetPos.x);
+				pathVertexData.push_back(0.0f);
+				pathVertexData.push_back(targetPos.z);
+				pathVertexData.push_back(1.0f);
+				pathVertexData.push_back(pos_matrix[3][0]);
+				pathVertexData.push_back(0.0f);
+				pathVertexData.push_back(pos_matrix[3][1]);
+				pathVertexData.push_back(1.0f);
+
+				pos_matrix[3][0] += (direction * 0.01f)[0];
+				pos_matrix[3][2] += (direction * 0.01f)[2];
 			}
-			
-			CCD();
 		}
 		
 		
