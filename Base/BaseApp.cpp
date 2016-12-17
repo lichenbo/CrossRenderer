@@ -60,7 +60,10 @@ void BaseApp::Loop(BaseRenderer * renderer)
 
 		fsec fs = t1 - t0;
 		ms d = std::chrono::duration_cast<ms>(fs);
-		std::cout << 1000 / d.count() << "fps\n";
+		int time_count = d.count();
+		if (time_count < 1)
+			time_count = 1;
+		std::cout << 1000 / time_count << "fps\n";
 	}
 
 	SDL_StopTextInput();

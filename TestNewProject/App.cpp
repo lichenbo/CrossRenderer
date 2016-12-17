@@ -121,6 +121,56 @@ private:
 	glm::vec3 m;
 };
 
+class Stick
+{
+public:
+	Stick(glm::vec3 position): position(position)
+	{
+		
+		vertex.push_back(glm::vec3(-length, -width, -height) + position);
+		vertex.push_back(glm::vec3(-length, -width, height) + position);
+		vertex.push_back(glm::vec3(-length, width, -height) + position);
+		vertex.push_back(glm::vec3(-length, width, height) + position);
+		vertex.push_back(glm::vec3(length, -width, -height) + position);
+		vertex.push_back(glm::vec3(length, -width, height) + position);
+		vertex.push_back(glm::vec3(length, width, -height) + position);
+		vertex.push_back(glm::vec3(length, width, height) + position);
+		assert(vertex.size() == 8);
+		float ixx = 0, iyy = 0, izz = 0, ixy = 0, ixz = 0, iyz = 0;
+		for (int i = 0; i < 8; ++i)
+		{
+			torque.push_back(0.f);
+			glm::vec3 local_vertex = vertex[i] - position;
+			ixx += local_vertex.y * local_vertex.y + local_vertex.z * local_vertex.z;
+			iyy += local_vertex.x * local_vertex.x + local_vertex.z * local_vertex.z;
+			izz += local_vertex.x * local_vertex.x + local_vertex.y * local_vertex.y;
+			ixy += local_vertex.x * local_vertex.y;
+			ixz += local_vertex.x * local_vertex.z;
+			iyz += local_vertex.y * local_vertex.z;
+		}
+		ixx *= mass;
+		iyy *= mass;
+		izz *= mass;
+		ixy *= mass;
+		iyz *= mass;
+		ixz *= mass;
+
+		inertiaTensor = glm::mat3(ixx, -ixy, -ixz, -ixy, iyy, -iyz, -ixz, -iyz, izz);
+		
+	}
+public:
+	glm::vec3 position;
+	float mass = 2.0; //kg
+	glm::mat3 rotation = glm::mat3(1.0f);
+	float length = 0.5f;
+	float width = 0.1f;
+	float height = 0.1f;
+	glm::mat3 inertiaTensor = glm::mat3(0.0f);
+	float linear_Momentum = 0;
+	float angular_Momentum = 0;
+	std::vector<glm::vec3> vertex;
+	std::vector<float> torque;
+};
 
 struct SkeletonNode
 {
@@ -140,9 +190,17 @@ private:
 	std::vector<float> pathVertexData;
 	std::vector<float> floorVertexData;
 	std::vector<float> targetVertexData;
+	std::vector<float> anchorVertexData;
+	std::vector<float> stickVertexData;
+	std::vector<float> springVertexData;
 	std::vector<glm::vec3> pathKnots;
 	std::vector<glm::vec3> intermediatePathKnots;
 	std::vector<glm::vec3> targetVertex;
+	std::vector<glm::vec3> anchorVertex;
+	std::vector<glm::vec3> stickVertex;
+	std::vector<glm::vec3> springVertex;
+	std::vector<Stick> stickList;
+	float stickLength = 1.0f;
 	std::map<float, float> arcLengthMap;
 	int indexData[4] = { 0,1,2,3 };
 	char* vertexShaderSource[1];
@@ -151,6 +209,8 @@ private:
 	int pathvbo = 0;
 	int floorvbo = 0;
 	int targetvbo = 0;
+	int stickvbo = 0;
+	int springvbo = 0;
 	int ibo = 0;
 	int vertexShader = 0;
 	int pixelShader = 0;
@@ -171,7 +231,7 @@ private:
 	SkeletonNode* skeleton_local_root = 0;
 	std::unordered_map<SkeletonNode*, float> constraint;
 
-	int projectIndex = 3;
+	int projectIndex = 4;
 
 	SkeletonNode* importFBX()
 	{
@@ -250,6 +310,7 @@ public:
 		pathvbo = renderer->CreateVBO(vertexData, 8);
 		floorvbo = renderer->CreateVBO(vertexData, 8);
 		targetvbo = renderer->CreateVBO(vertexData, 8);
+		stickvbo = renderer->CreateVBO(vertexData, 8);
 		ibo = renderer->CreateIBO(indexData, 4);
 		vertexShaderSource[0] =
 			"#version 140 \n in vec4 pos4; uniform mat4 MVP; void main() {gl_Position = MVP*pos4;}";
@@ -291,37 +352,53 @@ public:
 			renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
 		}
 
-		// floor data
-		std::vector<glm::vec3> floorVertex;
-		floorVertex.push_back(glm::vec3(-5.f, 0.f, 5.f));
-		floorVertex.push_back(glm::vec3(-5.f, 0.f, -5.f));
-		floorVertex.push_back(glm::vec3(-5.f, 0.f, -5.f));
-		floorVertex.push_back(glm::vec3(5.f, 0.f, -5.f));
-		floorVertex.push_back(glm::vec3(5.f, 0.f, -5.f));
-		floorVertex.push_back(glm::vec3(5.f, 0.f, 5.f));
-		floorVertex.push_back(glm::vec3(5.f, 0.f, 5.f));
-		floorVertex.push_back(glm::vec3(-5.f, 0.f, 5.f));
-
-		for (int i = 0; i < floorVertex.size(); ++i)
+		if (projectIndex < 4)
 		{
-			floorVertexData.push_back(floorVertex[i].x);
-			floorVertexData.push_back(floorVertex[i].y);
-			floorVertexData.push_back(floorVertex[i].z);
-			floorVertexData.push_back(1.f);
+			// floor data
+			std::vector<glm::vec3> floorVertex;
+			floorVertex.push_back(glm::vec3(-5.f, 0.f, 5.f));
+			floorVertex.push_back(glm::vec3(-5.f, 0.f, -5.f));
+			floorVertex.push_back(glm::vec3(-5.f, 0.f, -5.f));
+			floorVertex.push_back(glm::vec3(5.f, 0.f, -5.f));
+			floorVertex.push_back(glm::vec3(5.f, 0.f, -5.f));
+			floorVertex.push_back(glm::vec3(5.f, 0.f, 5.f));
+			floorVertex.push_back(glm::vec3(5.f, 0.f, 5.f));
+			floorVertex.push_back(glm::vec3(-5.f, 0.f, 5.f));
+
+			for (int i = 0; i < floorVertex.size(); ++i)
+			{
+				floorVertexData.push_back(floorVertex[i].x);
+				floorVertexData.push_back(floorVertex[i].y);
+				floorVertexData.push_back(floorVertex[i].z);
+				floorVertexData.push_back(1.f);
+			}
+			renderer->FillVBO(floorvbo, &floorVertexData[0], floorVertexData.size());
+
+			// target cube data for proj 3
+			targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
+			targetVertex.push_back(glm::vec3(-0.25, -0.25, 0));
+			targetVertex.push_back(glm::vec3(-0.25, -0.25, 0));
+			targetVertex.push_back(glm::vec3(0.25, -0.25, 0));
+			targetVertex.push_back(glm::vec3(0.25, -0.25, 0));
+			targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
+			targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
+			targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
+
+			targetPos = glm::vec3(0.0f, 5.0f, 0.0f);
 		}
-		renderer->FillVBO(floorvbo, &floorVertexData[0], floorVertexData.size());
 
-		// target cube data for proj 3
-		targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
-		targetVertex.push_back(glm::vec3(-0.25, -0.25, 0));
-		targetVertex.push_back(glm::vec3(-0.25, -0.25, 0));
-		targetVertex.push_back(glm::vec3(0.25, -0.25, 0));
-		targetVertex.push_back(glm::vec3(0.25, -0.25, 0));
-		targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
-		targetVertex.push_back(glm::vec3(0.25, 0.25, 0));
-		targetVertex.push_back(glm::vec3(-0.25, 0.25, 0));
+		if (projectIndex == 4)
+		{
+			anchorVertex.push_back(glm::vec3(-3.f, 3.f, 0.f));
+			anchorVertex.push_back(glm::vec3(3.f, 3.f, 0.f));
 
-		targetPos = glm::vec3(0.0f, 5.0f, 0.0f);
+			stickList.push_back(Stick(glm::vec3(-5.f, 0.f, 0.f)));
+			stickList.push_back(Stick(glm::vec3(-3.f, 0.f, 0.f)));
+			stickList.push_back(Stick(glm::vec3(0.f, 0.f, 0.f)));
+			stickList.push_back(Stick(glm::vec3(3.f, 0.f, 0.f)));
+			stickList.push_back(Stick(glm::vec3(5.f, 0.f, 0.f)));
+		}
+		
 	}
 
 	
@@ -688,7 +765,6 @@ public:
 			}
 		}
 		
-		
 		if (pathKnots.size() > 0)
 		{
 			float maxWalkingSpeed = 1.0f;	// unit per second
@@ -711,33 +787,94 @@ public:
 			pos_matrix[3][2] = current_pos[2];
 		}		
 
-
-
 		leftVec = glm::normalize(glm::cross(lookAtDir, upVec));
 		MVP = glm::perspectiveFov((float)M_PI/2, 100.f,100.f, 0.1f, 100.0f) * glm::lookAt(cameraPos, lookAtDir + cameraPos, upVec);
 
-		// Update bones
-		boneVertexData.clear();
-		readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), pos_matrix, skeleton, current_tick);
-		renderer->FillVBO(bonevbo, &boneVertexData[0], boneVertexData.size());
-
-		// Fill path data
-		if (pathVertexData.size() > 0)
-			renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
-
-		renderer->FillVBO(floorvbo, &floorVertexData[0], floorVertexData.size());
-		 
-		// Fill target data
-		targetVertexData.clear();
-		for (int i = 0; i < targetVertex.size(); ++i)
+		if (projectIndex < 4)
 		{
-			glm::vec3 dest = targetPos + targetVertex[i];
-			targetVertexData.push_back(dest.x);
-			targetVertexData.push_back(dest.y);
-			targetVertexData.push_back(dest.z);
-			targetVertexData.push_back(1.0f);
+			// Update bones
+			boneVertexData.clear();
+			readSkeletonHelper(NULL, glm::vec4(0.0,0.0,0.0,1.0), pos_matrix, skeleton, current_tick);
+			renderer->FillVBO(bonevbo, &boneVertexData[0], boneVertexData.size());
+
+			// Fill path data
+			if (pathVertexData.size() > 0)
+				renderer->FillVBO(pathvbo, &pathVertexData[0], pathVertexData.size());
+
+			renderer->FillVBO(floorvbo, &floorVertexData[0], floorVertexData.size());
+			 
+			// Fill target data
+			targetVertexData.clear();
+			for (int i = 0; i < targetVertex.size(); ++i)
+			{
+				glm::vec3 dest = targetPos + targetVertex[i];
+				targetVertexData.push_back(dest.x);
+				targetVertexData.push_back(dest.y);
+				targetVertexData.push_back(dest.z);
+				targetVertexData.push_back(1.0f);
+			}
+			renderer->FillVBO(targetvbo, &targetVertexData[0], targetVertexData.size());
 		}
-		renderer->FillVBO(targetvbo, &targetVertexData[0], targetVertexData.size());
+
+		if (projectIndex == 4)
+		{
+			anchorVertexData.clear();
+			anchorVertexData.push_back(anchorVertex[0].x);
+			anchorVertexData.push_back(anchorVertex[0].y);
+			anchorVertexData.push_back(anchorVertex[0].z);
+			anchorVertexData.push_back(1.0f);
+			anchorVertexData.push_back(anchorVertex[1].x);
+			anchorVertexData.push_back(anchorVertex[1].y);
+			anchorVertexData.push_back(anchorVertex[1].z);
+			anchorVertexData.push_back(1.0f);
+
+			stickVertex.clear();
+			for (Stick stick: stickList)
+			{
+				stickVertex.push_back(stick.vertex[0]);
+				stickVertex.push_back(stick.vertex[1]);
+				stickVertex.push_back(stick.vertex[0]);
+				stickVertex.push_back(stick.vertex[2]);
+				stickVertex.push_back(stick.vertex[0]);
+				stickVertex.push_back(stick.vertex[4]);
+				
+				stickVertex.push_back(stick.vertex[1]);
+				stickVertex.push_back(stick.vertex[3]);
+				stickVertex.push_back(stick.vertex[1]);
+				stickVertex.push_back(stick.vertex[5]);
+
+				stickVertex.push_back(stick.vertex[2]);
+				stickVertex.push_back(stick.vertex[3]);
+				stickVertex.push_back(stick.vertex[2]);
+				stickVertex.push_back(stick.vertex[6]);
+
+				stickVertex.push_back(stick.vertex[3]);
+				stickVertex.push_back(stick.vertex[7]);
+
+				stickVertex.push_back(stick.vertex[4]);
+				stickVertex.push_back(stick.vertex[5]);
+				stickVertex.push_back(stick.vertex[4]);
+				stickVertex.push_back(stick.vertex[6]);
+
+				stickVertex.push_back(stick.vertex[5]);
+				stickVertex.push_back(stick.vertex[7]);
+
+				stickVertex.push_back(stick.vertex[6]);
+				stickVertex.push_back(stick.vertex[7]);
+			}
+
+
+			stickVertexData.clear();
+			for (auto stickv : stickVertex)
+			{
+				stickVertexData.push_back(stickv.x);
+				stickVertexData.push_back(stickv.y);
+				stickVertexData.push_back(stickv.z);
+				stickVertexData.push_back(1.0f);
+			}
+			
+			renderer->FillVBO(stickvbo, &stickVertexData[0], stickVertexData.size());
+		}
 	}
 
 	/* Render content per frame */
@@ -750,22 +887,31 @@ public:
 		renderer->UseShaderProgram(shaderProgram);
 		renderer->BindUniformMat4f("MVP",glm::value_ptr(MVP), false);
 
-		// Draw Bones
-		renderer->BindVertexInput("pos4", bonevbo, 4);
-		renderer->DrawLine(boneVertexData.size());
-
-		// Draw Path
-		if (pathVertexData.size() > 0)
+		if (projectIndex < 4)
 		{
-			renderer->BindVertexInput("pos4", pathvbo, 4);
-			renderer->DrawLine(pathVertexData.size());
+			// Draw Bones
+			renderer->BindVertexInput("pos4", bonevbo, 4);
+			renderer->DrawLine(boneVertexData.size());
+
+			// Draw Path
+			if (pathVertexData.size() > 0)
+			{
+				renderer->BindVertexInput("pos4", pathvbo, 4);
+				renderer->DrawLine(pathVertexData.size());
+			}
+
+			renderer->BindVertexInput("pos4", floorvbo, 4);
+			renderer->DrawLine(floorVertexData.size());
+
+			renderer->BindVertexInput("pos4", targetvbo, 4);
+			renderer->DrawLine(targetVertexData.size());
 		}
-
-		renderer->BindVertexInput("pos4", floorvbo, 4);
-		renderer->DrawLine(floorVertexData.size());
-
-		renderer->BindVertexInput("pos4", targetvbo, 4);
-		renderer->DrawLine(targetVertexData.size());
+		
+		if (projectIndex == 4)
+		{
+			renderer->BindVertexInput("pos4", stickvbo, 4);
+			renderer->DrawLine(stickVertexData.size());
+		}
 	}
 };
 
